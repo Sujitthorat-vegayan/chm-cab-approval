@@ -1,1011 +1,1172 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useState, useEffect, useRef, useCallback, type CSSProperties } from 'react'
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  LineElement,
-  PointElement,
-  ArcElement,
-  RadarController,
-  RadialLinearScale,
-  Title,
-  Tooltip,
-  Legend,
-  Filler,
-} from 'chart.js'
-import { Bar, Radar } from 'react-chartjs-2'
-
-ChartJS.register(
-  CategoryScale, LinearScale, BarElement, LineElement, PointElement,
-  ArcElement, RadarController, RadialLinearScale, Title, Tooltip, Legend, Filler,
-)
-ChartJS.defaults.color = 'rgba(180, 210, 255, 0.75)'
-ChartJS.defaults.borderColor = 'rgba(255, 255, 255, 0.07)'
-ChartJS.defaults.plugins.tooltip.backgroundColor = 'rgba(5, 18, 40, 0.97)'
-ChartJS.defaults.plugins.tooltip.borderColor = 'rgba(0, 191, 255, 0.3)'
-ChartJS.defaults.plugins.tooltip.borderWidth = 1
-ChartJS.defaults.plugins.tooltip.titleColor = '#00e5ff'
-ChartJS.defaults.plugins.tooltip.bodyColor = 'rgba(200, 225, 255, 0.9)'
-ChartJS.defaults.plugins.tooltip.padding = 10
-ChartJS.defaults.plugins.tooltip.cornerRadius = 8
+import { useState, useEffect, useRef, useCallback } from 'react'
 
 export const Route = createFileRoute('/')({ component: Home })
 
-// ─── COLORS ──────────────────────────────────────────────────────────────────
-const C = {
-  blue: '#00bfff', cyan: '#00e5ff', green: '#00ff88', orange: '#ff8c00',
-  red: '#ff3366', yellow: '#ffd700', purple: '#bf5fff', teal: '#00e0c6', pink: '#ff69b4',
+// ─── TYPES ───────────────────────────────────────────────────────────────────
+interface TrackerItem {
+  l: string
+  sub: string
+  s: 'done' | 'act' | 'pend'
 }
 
-const glass = (extra?: CSSProperties): CSSProperties => ({
-  background: 'rgba(6, 18, 40, 0.72)',
-  backdropFilter: 'blur(22px)',
-  WebkitBackdropFilter: 'blur(22px)',
-  border: '1px solid rgba(0, 191, 255, 0.11)',
-  borderRadius: '14px',
-  boxShadow: '0 4px 28px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04)',
-  ...extra,
-})
-
-const neon = (color: string): CSSProperties => ({
-  color, textShadow: `0 0 10px ${color}90, 0 0 22px ${color}40`,
-})
-
-// ─── FUNCTION → DOMAIN → SUBDOMAIN HIERARCHY ────────────────────────────────
-const FUNC_HIERARCHY: Record<string, Record<string, string[]>> = {
-  SE: {
-    'IP Core': ['MPLS-Core', 'BRAS-Core', 'CEN-Core'],
-    'Packet': ['Packet-Change', 'Packet_NI'],
-    'Embedded Support': ['All'],
-    'IP Access': ['MPLS-Access', 'CEN-Access', 'OLT Access'],
-    'Optics': ['Network_expansion', 'NNI', 'OTN/LCD', 'Project'],
-    'Service Optimisation': ['All'],
-  },
-  CCB: {
-    'IP Core_CCB': ['MPLS-Core_CCB', 'BRAS-Core_CCB', 'CEN-Core_CCB'],
-    'Packet_CCB': ['Packet-Change_CCB', 'Packet_NI_CCB'],
-    'Embedded Support_CCB': ['All'],
-    'IP Access_CCB': ['MPLS-Access_CCB', 'CEN-Access_CCB', 'OLT Access_CCB'],
-    'Optics_CCB': ['Network_expansion_CCB', 'Project_CCB'],
-    'Service Optimisation_CCB': ['All'],
-  },
-}
-
-// ─── CRQ DATASET ─────────────────────────────────────────────────────────────
 interface CRQ {
-  changeId: string; submitDate: string; status: string; aging: number
-  changeImpact: string; changeRequester: string; summary: string
-  region: string; circle: string; binGroup: string
-  changeCoordinator: string; changeImplementor: string
-  domain: string; subdomain: string; func: string; stage: string
+  id: string
+  act: string
+  tech: string
+  domain: string
+  circle: string
+  impact: string
+  window: string
+  host: string
+  sched: string
+  stage: string
+  sla: number
+  slaCls: string
+  urgency: string
+  tracker: TrackerItem[]
 }
 
-const CRQ_DATA: CRQ[] = [
-  { changeId: 'CRQ001141', submitDate: '2026-01-09', status: 'Completed', aging: 6, changeImpact: 'SA', changeRequester: 'NOC', summary: 'Access switch port VLAN change', region: 'East', circle: 'Odisha', binGroup: 'NOC_SE_Upgrade', changeCoordinator: 'Rahul Sharma', changeImplementor: 'Naveen P', domain: 'IP Core', subdomain: 'MPLS-Core', func: 'SE', stage: 'Task Closure' },
-  { changeId: 'CRQ001142', submitDate: '2025-03-23', status: 'Completed', aging: 13, changeImpact: 'SA', changeRequester: 'Operations', summary: 'BRAS configuration for new subscriber pool', region: 'South', circle: 'Karnataka', binGroup: 'TX_DATA', changeCoordinator: 'Kavita Joshi', changeImplementor: 'Ajay K', domain: 'IP Core', subdomain: 'BRAS-Core', func: 'SE', stage: 'Task Closure' },
-  { changeId: 'CRQ001143', submitDate: '2025-04-20', status: 'Completed', aging: 13, changeImpact: 'NSA', changeRequester: 'NOC', summary: 'IP-MPLS path optimization', region: 'North', circle: 'Rajasthan', binGroup: 'CCB_AES-CFM-CHM', changeCoordinator: 'Deepa Rao', changeImplementor: 'Naveen P', domain: 'IP Core', subdomain: 'CEN-Core', func: 'SE', stage: 'Task Closure' },
-  { changeId: 'CRQ001144', submitDate: '2026-02-15', status: 'Open', aging: 2, changeImpact: 'SA', changeRequester: 'NOC', summary: 'Packet switch firmware upgrade', region: 'West', circle: 'Gujarat', binGroup: 'NOC_SE_Packet', changeCoordinator: 'Amit Patel', changeImplementor: 'Priya S', domain: 'Packet', subdomain: 'Packet-Change', func: 'SE', stage: 'MOP Creation' },
-  { changeId: 'CRQ001145', submitDate: '2026-03-01', status: 'Open', aging: 1, changeImpact: 'NSA', changeRequester: 'Planning', summary: 'New NI circuit provisioning on packet ring', region: 'South', circle: 'Tamil Nadu', binGroup: 'TX_NI', changeCoordinator: 'Sanjay M', changeImplementor: 'Vikram R', domain: 'Packet', subdomain: 'Packet_NI', func: 'SE', stage: 'Impact Analysis' },
-  { changeId: 'CRQ001146', submitDate: '2026-01-28', status: 'Open', aging: 5, changeImpact: 'SA', changeRequester: 'NOC', summary: 'Embedded controller patching and reboot', region: 'North', circle: 'Delhi', binGroup: 'NOC_SE_Embed', changeCoordinator: 'Neha Gupta', changeImplementor: 'Ravi K', domain: 'Embedded Support', subdomain: 'All', func: 'SE', stage: 'Scheduling & Approvals' },
-  { changeId: 'CRQ001147', submitDate: '2026-02-20', status: 'Open', aging: 3, changeImpact: 'NSA', changeRequester: 'Operations', summary: 'MPLS access PE router config change', region: 'East', circle: 'West Bengal', binGroup: 'TX_ACCESS', changeCoordinator: 'Rahul Sharma', changeImplementor: 'Suresh B', domain: 'IP Access', subdomain: 'MPLS-Access', func: 'SE', stage: 'MOP Validation' },
-  { changeId: 'CRQ001148', submitDate: '2026-03-10', status: 'Rejected', aging: 4, changeImpact: 'SA', changeRequester: 'NOC', summary: 'CEN access ring reconfiguration rejected due to window conflict', region: 'South', circle: 'Kerala', binGroup: 'NOC_SE_Access', changeCoordinator: 'Deepa Rao', changeImplementor: 'Ajay K', domain: 'IP Access', subdomain: 'CEN-Access', func: 'SE', stage: 'Plan and Inventory Validation' },
-  { changeId: 'CRQ001149', submitDate: '2026-02-05', status: 'Open', aging: 7, changeImpact: 'SA', changeRequester: 'Planning', summary: 'OLT access port activation for FTTH expansion', region: 'West', circle: 'Maharashtra', binGroup: 'NOC_FTTH', changeCoordinator: 'Kavita Joshi', changeImplementor: 'Priya S', domain: 'IP Access', subdomain: 'OLT Access', func: 'SE', stage: 'Network Execution' },
-  { changeId: 'CRQ001150', submitDate: '2026-01-18', status: 'Completed', aging: 9, changeImpact: 'NSA', changeRequester: 'NOC', summary: 'Network expansion - new fiber route commissioning', region: 'North', circle: 'UP East', binGroup: 'TX_OPTICS', changeCoordinator: 'Amit Patel', changeImplementor: 'Vikram R', domain: 'Optics', subdomain: 'Network_expansion', func: 'SE', stage: 'Task Closure' },
-  { changeId: 'CRQ001151', submitDate: '2026-03-05', status: 'Open', aging: 2, changeImpact: 'SA', changeRequester: 'Operations', summary: 'NNI link capacity upgrade between exchanges', region: 'South', circle: 'Andhra Pradesh', binGroup: 'TX_NNI', changeCoordinator: 'Sanjay M', changeImplementor: 'Ravi K', domain: 'Optics', subdomain: 'NNI', func: 'SE', stage: 'Impact Analysis' },
-  { changeId: 'CRQ001152', submitDate: '2026-02-28', status: 'Open', aging: 4, changeImpact: 'NSA', changeRequester: 'NOC', summary: 'OTN/LCD wavelength reallocation', region: 'East', circle: 'Bihar', binGroup: 'TX_OTN', changeCoordinator: 'Neha Gupta', changeImplementor: 'Suresh B', domain: 'Optics', subdomain: 'OTN/LCD', func: 'SE', stage: 'MOP Creation' },
-  { changeId: 'CRQ001153', submitDate: '2026-03-15', status: 'Open', aging: 1, changeImpact: 'SA', changeRequester: 'Planning', summary: 'Optics project - metro ring dark fiber activation', region: 'West', circle: 'Rajasthan', binGroup: 'TX_PROJECT', changeCoordinator: 'Rahul Sharma', changeImplementor: 'Naveen P', domain: 'Optics', subdomain: 'Project', func: 'SE', stage: 'Plan and Inventory Validation' },
-  { changeId: 'CRQ001154', submitDate: '2026-01-25', status: 'Completed', aging: 11, changeImpact: 'SA', changeRequester: 'Operations', summary: 'Service optimization - QoS policy tuning on PE routers', region: 'North', circle: 'Haryana', binGroup: 'NOC_SE_QOS', changeCoordinator: 'Kavita Joshi', changeImplementor: 'Ajay K', domain: 'Service Optimisation', subdomain: 'All', func: 'SE', stage: 'Task Closure' },
-  { changeId: 'CRQ001155', submitDate: '2026-02-10', status: 'Open', aging: 6, changeImpact: 'NSA', changeRequester: 'NOC', summary: 'Traffic engineering optimization across MPLS domain', region: 'South', circle: 'Karnataka', binGroup: 'NOC_SE_TE', changeCoordinator: 'Deepa Rao', changeImplementor: 'Priya S', domain: 'Service Optimisation', subdomain: 'All', func: 'SE', stage: 'Scheduling & Approvals' },
-  { changeId: 'CRQ001156', submitDate: '2026-03-20', status: 'Open', aging: 1, changeImpact: 'SA', changeRequester: 'CCB', summary: 'CCB review - MPLS core label range modification', region: 'East', circle: 'Odisha', binGroup: 'CCB_MPLS', changeCoordinator: 'Amit Patel', changeImplementor: 'Vikram R', domain: 'IP Core_CCB', subdomain: 'MPLS-Core_CCB', func: 'CCB', stage: 'MOP Validation' },
-  { changeId: 'CRQ001157', submitDate: '2026-02-18', status: 'Open', aging: 5, changeImpact: 'SA', changeRequester: 'CCB', summary: 'CCB BRAS core subscriber pool expansion review', region: 'North', circle: 'Punjab', binGroup: 'CCB_BRAS', changeCoordinator: 'Sanjay M', changeImplementor: 'Ravi K', domain: 'IP Core_CCB', subdomain: 'BRAS-Core_CCB', func: 'CCB', stage: 'Scheduling & Approvals' },
-  { changeId: 'CRQ001158', submitDate: '2026-01-30', status: 'Completed', aging: 8, changeImpact: 'NSA', changeRequester: 'CCB', summary: 'CCB approved CEN core routing policy change', region: 'West', circle: 'Gujarat', binGroup: 'CCB_CEN', changeCoordinator: 'Neha Gupta', changeImplementor: 'Suresh B', domain: 'IP Core_CCB', subdomain: 'CEN-Core_CCB', func: 'CCB', stage: 'Task Closure' },
-  { changeId: 'CRQ001159', submitDate: '2026-03-08', status: 'Open', aging: 3, changeImpact: 'SA', changeRequester: 'CCB', summary: 'CCB packet change - microwave backhaul reconfiguration', region: 'South', circle: 'Tamil Nadu', binGroup: 'CCB_PKT', changeCoordinator: 'Rahul Sharma', changeImplementor: 'Naveen P', domain: 'Packet_CCB', subdomain: 'Packet-Change_CCB', func: 'CCB', stage: 'Impact Analysis' },
-  { changeId: 'CRQ001160', submitDate: '2026-02-25', status: 'Rejected', aging: 6, changeImpact: 'NSA', changeRequester: 'CCB', summary: 'CCB NI provisioning rejected - incomplete MOP documentation', region: 'North', circle: 'Delhi', binGroup: 'CCB_NI', changeCoordinator: 'Kavita Joshi', changeImplementor: 'Ajay K', domain: 'Packet_CCB', subdomain: 'Packet_NI_CCB', func: 'CCB', stage: 'MOP Creation' },
-  { changeId: 'CRQ001161', submitDate: '2026-03-12', status: 'Open', aging: 2, changeImpact: 'SA', changeRequester: 'CCB', summary: 'CCB embedded systems critical patch review', region: 'East', circle: 'Jharkhand', binGroup: 'CCB_EMBED', changeCoordinator: 'Deepa Rao', changeImplementor: 'Priya S', domain: 'Embedded Support_CCB', subdomain: 'All', func: 'CCB', stage: 'Plan and Inventory Validation' },
-  { changeId: 'CRQ001162', submitDate: '2026-01-15', status: 'Completed', aging: 14, changeImpact: 'SA', changeRequester: 'CCB', summary: 'CCB MPLS access PE decommission approval', region: 'West', circle: 'Maharashtra', binGroup: 'CCB_ACCESS', changeCoordinator: 'Amit Patel', changeImplementor: 'Vikram R', domain: 'IP Access_CCB', subdomain: 'MPLS-Access_CCB', func: 'CCB', stage: 'Task Closure' },
-  { changeId: 'CRQ001163', submitDate: '2026-02-08', status: 'Open', aging: 7, changeImpact: 'NSA', changeRequester: 'CCB', summary: 'CCB CEN access ring topology change review', region: 'South', circle: 'Kerala', binGroup: 'CCB_CEN_ACC', changeCoordinator: 'Sanjay M', changeImplementor: 'Ravi K', domain: 'IP Access_CCB', subdomain: 'CEN-Access_CCB', func: 'CCB', stage: 'Network Execution' },
-  { changeId: 'CRQ001164', submitDate: '2026-03-18', status: 'Open', aging: 1, changeImpact: 'SA', changeRequester: 'CCB', summary: 'CCB OLT access mass provisioning review', region: 'North', circle: 'UP West', binGroup: 'CCB_OLT', changeCoordinator: 'Neha Gupta', changeImplementor: 'Suresh B', domain: 'IP Access_CCB', subdomain: 'OLT Access_CCB', func: 'CCB', stage: 'Impact Analysis' },
-  { changeId: 'CRQ001165', submitDate: '2026-02-12', status: 'Open', aging: 5, changeImpact: 'SA', changeRequester: 'CCB', summary: 'CCB optics network expansion - new DWDM route', region: 'East', circle: 'West Bengal', binGroup: 'CCB_OPTICS', changeCoordinator: 'Rahul Sharma', changeImplementor: 'Naveen P', domain: 'Optics_CCB', subdomain: 'Network_expansion_CCB', func: 'CCB', stage: 'MOP Validation' },
-  { changeId: 'CRQ001166', submitDate: '2026-03-25', status: 'Open', aging: 1, changeImpact: 'NSA', changeRequester: 'CCB', summary: 'CCB optics project - intercity fiber splice review', region: 'West', circle: 'Rajasthan', binGroup: 'CCB_PROJ', changeCoordinator: 'Kavita Joshi', changeImplementor: 'Ajay K', domain: 'Optics_CCB', subdomain: 'Project_CCB', func: 'CCB', stage: 'Plan and Inventory Validation' },
-  { changeId: 'CRQ001167', submitDate: '2026-01-22', status: 'Completed', aging: 10, changeImpact: 'SA', changeRequester: 'CCB', summary: 'CCB service optimization - bandwidth shaping policy', region: 'South', circle: 'Andhra Pradesh', binGroup: 'CCB_SVC', changeCoordinator: 'Deepa Rao', changeImplementor: 'Priya S', domain: 'Service Optimisation_CCB', subdomain: 'All', func: 'CCB', stage: 'Task Closure' },
-  { changeId: 'CRQ001168', submitDate: '2026-03-02', status: 'Open', aging: 4, changeImpact: 'NSA', changeRequester: 'CCB', summary: 'CCB service optimization review - latency reduction plan', region: 'North', circle: 'Haryana', binGroup: 'CCB_OPTIM', changeCoordinator: 'Amit Patel', changeImplementor: 'Vikram R', domain: 'Service Optimisation_CCB', subdomain: 'All', func: 'CCB', stage: 'Scheduling & Approvals' },
-  { changeId: 'CRQ001169', submitDate: '2026-02-22', status: 'Open', aging: 8, changeImpact: 'SA', changeRequester: 'NOC', summary: 'MPLS core LDP session flap remediation', region: 'East', circle: 'Odisha', binGroup: 'NOC_SE_MPLS', changeCoordinator: 'Sanjay M', changeImplementor: 'Suresh B', domain: 'IP Core', subdomain: 'MPLS-Core', func: 'SE', stage: 'Network Execution' },
-  { changeId: 'CRQ001170', submitDate: '2026-03-28', status: 'Open', aging: 1, changeImpact: 'SA', changeRequester: 'Operations', summary: 'BRAS core AAA server failover configuration', region: 'North', circle: 'Punjab', binGroup: 'NOC_SE_BRAS', changeCoordinator: 'Neha Gupta', changeImplementor: 'Ravi K', domain: 'IP Core', subdomain: 'BRAS-Core', func: 'SE', stage: 'Plan and Inventory Validation' },
+// ─── DATA ────────────────────────────────────────────────────────────────────
+const CRQs: CRQ[] = [
+  {id:'CRQ-001',act:'Link Upgrade',tech:'MPLS',domain:'IP Core',circle:'GJ',impact:'SA',window:'03:00–05:00',host:'RTR-BLR01',sched:'Mar 26, 2026',stage:'CAB Approval',sla:85,slaCls:'s-re',urgency:'#dc2626',tracker:[{l:'L1 — Manager',sub:'Approved: Mar 24, 2026 09:00',s:'done'},{l:'L2 — CAB',sub:'Current · Waiting for quorum',s:'act'},{l:'L4 — Implementation',sub:'Upcoming',s:'pend'}]},
+  {id:'CMC-031',act:'GPON Config',tech:'GPON',domain:'PVoIcc',circle:'MH',impact:'NSA',window:'02:00–04:00',host:'OLT-MUM01',sched:'Mar 26, 2026',stage:'Stakeholder',sla:45,slaCls:'s-am',urgency:'#d97706',tracker:[{l:'L1 — Manager',sub:'Approved: Mar 23, 2026',s:'done'},{l:'L2 — Stakeholder',sub:'Current · 3/5 approved',s:'act'},{l:'L2 — CAB',sub:'Upcoming',s:'pend'},{l:'L4 — Implementation',sub:'Upcoming',s:'pend'}]},
+  {id:'CMP-023',act:'BGP Change',tech:'BGP',domain:'IP Core',circle:'KA',impact:'SA',window:'01:00–03:00',host:'RTR-BNG02',sched:'Mar 26, 2026',stage:'MOP Validation',sla:85,slaCls:'s-re',urgency:'#dc2626',tracker:[{l:'L1 — Manager',sub:'Approved',s:'done'},{l:'L3 — MOP Validation',sub:'Current · Pending MOP review',s:'act'},{l:'L2 — CAB',sub:'Upcoming',s:'pend'}]},
+  {id:'CMC-003',act:'BLJ Chang',tech:'BGP',domain:'Packet',circle:'DL',impact:'NSA',window:'04:00–06:00',host:'RTR-DEL03',sched:'Mar 26, 2026',stage:'Authorization',sla:72,slaCls:'s-gr',urgency:'#2563eb',tracker:[{l:'L1 — Authorization',sub:'Current · Pending NOC Manager',s:'act'},{l:'L2 — Stakeholder',sub:'Upcoming',s:'pend'},{l:'L2 — CAB',sub:'Upcoming',s:'pend'}]},
+  {id:'CRQ-002',act:'MPLS Reroute',tech:'MPLS',domain:'Optics',circle:'RJ',impact:'SA',window:'00:00–02:00',host:'RTR-JAI01',sched:'Mar 27, 2026',stage:'Stakeholder',sla:38,slaCls:'s-am',urgency:'#d97706',tracker:[{l:'L1 — Manager',sub:'Approved',s:'done'},{l:'L2 — Stakeholder',sub:'Current · 2/4 approved',s:'act'},{l:'L2 — CAB',sub:'Upcoming',s:'pend'}]},
+  {id:'CMC-002',act:'Router Swap',tech:'Router',domain:'Embedded',circle:'GJ',impact:'NSA',window:'05:00–07:00',host:'RTR-GAN01',sched:'Mar 27, 2026',stage:'Rejected',sla:0,slaCls:'s-br',urgency:'#9ca3af',tracker:[{l:'L1 — Manager',sub:'Rejected: Mar 22, 2026',s:'done'},{l:'Closed',sub:'CRQ cancelled',s:'done'}]},
+  {id:'CRQ-003',act:'BGP Policy Update',tech:'BGP',domain:'IP Core',circle:'MH',impact:'SA',window:'02:00–04:00',host:'RTR-MUM04',sched:'Mar 28, 2026',stage:'MOP Creation',sla:60,slaCls:'s-gr',urgency:'#0d9488',tracker:[{l:'L1 — Manager',sub:'Approved',s:'done'},{l:'L2 — Stakeholder',sub:'Approved',s:'done'},{l:'L3 — MOP Creation',sub:'Current · MOP in progress',s:'act'},{l:'L2 — CAB',sub:'Upcoming',s:'pend'}]},
+  {id:'CMC-004',act:'Fiber Splice',tech:'Optics',domain:'Optics',circle:'KA',impact:'SA',window:'01:00–03:00',host:'OLT-BNG03',sched:'Mar 29, 2026',stage:'CAB Approval',sla:30,slaCls:'s-am',urgency:'#d97706',tracker:[{l:'L1 — Manager',sub:'Approved',s:'done'},{l:'L2 — Stakeholder',sub:'Approved',s:'done'},{l:'L2 — CAB',sub:'Current',s:'act'}]},
+  {id:'CRQ-004',act:'Router Upgrade',tech:'Router',domain:'IP Core',circle:'RJ',impact:'NSA',window:'03:00–05:00',host:'RTR-JAI02',sched:'Mar 29, 2026',stage:'Authorization',sla:90,slaCls:'s-re',urgency:'#dc2626',tracker:[{l:'L1 — Authorization',sub:'CRITICAL · SLA near breach',s:'act'}]},
+  {id:'CMC-005',act:'VLAN Change',tech:'Packet',domain:'Embedded',circle:'DL',impact:'NSA',window:'04:00–06:00',host:'SW-DEL01',sched:'Mar 30, 2026',stage:'Impact Validation',sla:55,slaCls:'s-gr',urgency:'#2563eb',tracker:[{l:'L1 — Manager',sub:'Approved',s:'done'},{l:'Plan & Inventory',sub:'Validated',s:'done'},{l:'Impact Validation',sub:'Current · Running analysis',s:'act'}]},
 ]
 
-// ─── LIFECYCLE STAGES (strict order) ─────────────────────────────────────────
-const LIFECYCLE_STAGES = [
-  'Plan and Inventory Validation', 'Impact Analysis', 'MOP Creation',
-  'MOP Validation', 'Scheduling & Approvals', 'Network Execution', 'Task Closure',
-]
-
-// ─── DERIVED DATA FUNCTIONS ──────────────────────────────────────────────────
-function filterCRQs(data: CRQ[], func: string, domain: string, subdomain: string, dateRange: string): CRQ[] {
-  let filtered = [...data]
-  if (func !== 'All Functions') filtered = filtered.filter(c => c.func === func)
-  if (domain !== 'All Domains') filtered = filtered.filter(c => c.domain === domain)
-  if (subdomain !== 'All Subdomains') filtered = filtered.filter(c => c.subdomain === subdomain)
-
-  const now = new Date('2026-03-30')
-  if (dateRange === 'Last 7 Days') {
-    const d = new Date(now); d.setDate(d.getDate() - 7)
-    filtered = filtered.filter(c => new Date(c.submitDate) >= d)
-  } else if (dateRange === 'Last 30 Days') {
-    const d = new Date(now); d.setDate(d.getDate() - 30)
-    filtered = filtered.filter(c => new Date(c.submitDate) >= d)
-  } else if (dateRange === 'Last 90 Days') {
-    const d = new Date(now); d.setDate(d.getDate() - 90)
-    filtered = filtered.filter(c => new Date(c.submitDate) >= d)
-  } else if (dateRange === 'This Quarter') {
-    filtered = filtered.filter(c => new Date(c.submitDate) >= new Date('2026-01-01'))
-  }
-  return filtered
+// ─── CONSTANTS ───────────────────────────────────────────────────────────────
+const stageBadges: Record<string, string> = {
+  'Authorization': '<span class="bg bg-te">Authorization</span>',
+  'Stakeholder': '<span class="bg bg-am">Stakeholder</span>',
+  'CAB Approval': '<span class="bg bg-pu">CAB Approval</span>',
+  'MOP Validation': '<span class="bg bg-bl">MOP Validation</span>',
+  'MOP Creation': '<span class="bg bg-bl">MOP Creation</span>',
+  'Impact Validation': '<span class="bg bg-te">Impact Validation</span>',
+  'Rejected': '<span class="bg bg-re">Rejected</span>',
 }
 
-function getKPIs(data: CRQ[]) {
-  const total = data.length
-  const open = data.filter(c => c.status === 'Open').length
-  const completed = data.filter(c => c.status === 'Completed').length
-  const rejected = data.filter(c => c.status === 'Rejected').length
-  const sla = total > 0 ? Math.round((data.filter(c => c.aging <= 8).length / total) * 1000) / 10 : 0
-  return [
-    { title: 'Total CRQs', value: total.toLocaleString(), change: '+12.3%', up: true, color: C.blue, spark: [180,210,195,230,250,240,270,255,280, total] },
-    { title: 'Open CRQs', value: open.toLocaleString(), change: '-8.5%', up: false, color: C.cyan, spark: [52,49,47,46,45,45,44,43,42, open] },
-    { title: 'Completed', value: completed.toLocaleString(), change: '+15.7%', up: true, color: C.green, spark: [5,6,7,8,8,9,9,10,10, completed] },
-    { title: 'Rejected', value: rejected.toLocaleString(), change: '-3.2%', up: false, color: C.orange, spark: [5,5,4,4,3,3,3,2,2, rejected] },
-    { title: 'SLA Score', value: `${sla}%`, change: '+2.1%', up: true, color: C.yellow, spark: [88,89,90,91,91,92,93,93,94, sla] },
-  ]
+const stepMap = ['Authorization','Plan & Inventory','Impact Validation','Stakeholder','MOP Creation','MOP Validation','CAB Approval','Network Exec','Closed']
+const stageStep: Record<string, number> = {
+  'Authorization':0,'Plan & Inventory':1,'Impact Validation':2,'Stakeholder':3,
+  'MOP Creation':4,'MOP Validation':5,'CAB Approval':6,'Network Exec':7,'Closed':8,'Rejected':8,
 }
 
-function getSLARows(data: CRQ[]) {
-  return data.filter(c => c.status === 'Open').slice(0, 10).map(c => {
-    const hoursLeft = (8 - c.aging) * 24 + Math.floor(Math.random() * 23)
-    const status = hoursLeft < 0 ? 'breach' : hoursLeft < 48 ? 'risk' : 'safe'
-    return { id: c.changeId, domain: c.domain, eng: c.changeImplementor, status, time: hoursLeft < 0 ? `-${Math.abs(hoursLeft)}h` : `${hoursLeft}h ${Math.floor(Math.random() * 59)}m` }
-  })
+const pgTitles: Record<string, string> = {
+  dashboard:'Dashboard', crqs:'All CRQs', myapprovals:'My Approvals',
+  cabsessions:'CAB Sessions', cabplanning:'CAB Planning', analytics:'Analytics',
+  admin:'Admin Configuration',
 }
 
-function getBreachRisk(data: CRQ[]) {
-  const domains = [...new Set(data.map(c => c.domain))]
-  return domains.map(d => {
-    const dd = data.filter(c => c.domain === d)
-    return {
-      domain: d,
-      healthy: dd.filter(c => c.aging <= 4).length,
-      risk: dd.filter(c => c.aging > 4 && c.aging <= 8).length,
-      breach: dd.filter(c => c.aging > 8).length,
-    }
-  })
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+function renderStepper(stage: string): string {
+  const active = stageStep[stage] ?? 6
+  return stepMap.map((s, i) => {
+    const cls = i < active ? 'done' : i === active ? 'active' : 'pend'
+    return `<div class="sn ${cls}"><div class="sn-dot"></div>${s}</div>`
+  }).join('')
 }
 
-function getDomainSLA(data: CRQ[]) {
-  const domains = [...new Set(data.map(c => c.domain))]
-  const colors = [C.cyan, C.blue, C.orange, C.green, C.purple, C.yellow, C.teal, C.pink]
-  return domains.map((d, i) => {
-    const dd = data.filter(c => c.domain === d)
-    const pct = dd.length > 0 ? Math.round((dd.filter(c => c.aging <= 8).length / dd.length) * 1000) / 10 : 0
-    return { domain: d, pct, color: colors[i % colors.length] }
-  })
+function renderTracker(tracker: TrackerItem[]): string {
+  return tracker.map((t, i) => {
+    const iconCls = t.s === 'done' ? 'tr-done' : t.s === 'act' ? 'tr-act' : 'tr-pend'
+    const rowCls = t.s === 'done' ? 'done' : t.s === 'act' ? 'act' : ''
+    const icon = t.s === 'done' ? '✓' : t.s === 'act' ? '●' : String(i + 1)
+    const bg = t.s === 'done' ? 'bg-gr' : t.s === 'act' ? 'bg-bl' : 'bg-gy'
+    return `<div class="tr-row ${rowCls}"><div class="tr-icon ${iconCls}">${icon}</div><div style="flex:1"><div class="tr-lbl">${t.l}</div><div class="tr-sub">${t.sub}</div></div><span class="bg ${bg}" style="font-size:10px">${t.s === 'done' ? 'Done' : t.s === 'act' ? 'Active' : 'Pending'}</span></div>`
+  }).join('')
 }
 
-function getStageDistribution(data: CRQ[]) {
-  return {
-    labels: LIFECYCLE_STAGES.map(s => s.length > 18 ? s.slice(0, 16) + '…' : s),
-    datasets: [{
-      label: 'Count',
-      data: LIFECYCLE_STAGES.map(s => data.filter(c => c.stage === s).length),
-      backgroundColor: [
-        'rgba(0,191,255,0.82)', 'rgba(0,255,136,0.78)', 'rgba(255,215,0,0.78)',
-        'rgba(191,95,255,0.78)', 'rgba(0,229,255,0.78)', 'rgba(255,140,0,0.82)',
-        'rgba(0,255,136,0.9)',
-      ],
-      borderRadius: 5,
-    }],
-  }
-}
-
-function getDomainCRQData(data: CRQ[]) {
-  const domains = [...new Set(data.map(c => c.domain))]
-  return {
-    labels: domains,
-    datasets: [
-      { label: 'Completed', data: domains.map(d => data.filter(c => c.domain === d && c.status === 'Completed').length), backgroundColor: 'rgba(0,255,136,0.82)', borderRadius: 3 },
-      { label: 'Open', data: domains.map(d => data.filter(c => c.domain === d && c.status === 'Open').length), backgroundColor: 'rgba(0,191,255,0.82)', borderRadius: 3 },
-      { label: 'Rejected', data: domains.map(d => data.filter(c => c.domain === d && c.status === 'Rejected').length), backgroundColor: 'rgba(255,51,102,0.82)', borderRadius: 3 },
-    ],
-  }
-}
-
-// ─── STATIC DATA ─────────────────────────────────────────────────────────────
-const ALERTS = [
-  { level: 'critical', msg: 'CRQ001169 SLA BREACHED — IP Core domain, 8d overdue', t: '14:23:45' },
-  { level: 'critical', msg: 'CRQ001163 SLA BREACHED — IP Access_CCB, 7d aging', t: '14:18:02' },
-  { level: 'warning', msg: 'CRQ001149 approaching SLA breach — OLT Access, 7d aging', t: '14:15:30' },
-  { level: 'warning', msg: 'CRQ001146 at risk — Embedded Support, 5d aging', t: '14:12:11' },
-  { level: 'warning', msg: '3 CRQs in IP Access domain at risk of imminent SLA breach', t: '14:08:55' },
-  { level: 'info', msg: 'CCB approval queue: 8 pending items, avg wait time 3.8h', t: '14:05:20' },
-  { level: 'info', msg: 'SE Team utilization at 87% — consider workload rebalancing', t: '13:58:44' },
-]
-
-const FEED = [
-  { t: '14:27:32', msg: '[IP-CORE] CRQ001141 state: Execution → Closure', type: 'info' },
-  { t: '14:26:18', msg: '[PACKET] CRQ001145 validator assigned: Vikram R', type: 'info' },
-  { t: '14:25:45', msg: '[IP-CORE] CRQ001169 SLA BREACH — escalating L3', type: 'error' },
-  { t: '14:24:33', msg: '[OPTICS] CRQ001150 MOP approved by CCB board', type: 'success' },
-  { t: '14:23:12', msg: '[IP-ACCESS] CRQ001149 impact analysis completed', type: 'info' },
-  { t: '14:22:05', msg: '[EMBEDDED] CRQ001146 moved to scheduling phase', type: 'info' },
-  { t: '14:21:47', msg: '[IP-CORE_CCB] CRQ001157 SLA WARNING — 5d aging', type: 'warning' },
-  { t: '14:20:30', msg: '[PACKET_CCB] CRQ001159 new CRQ created', type: 'info' },
-  { t: '14:19:15', msg: '[OPTICS] CRQ001152 plan review scheduled 15:00 UTC', type: 'info' },
-  { t: '14:18:02', msg: '[SVC-OPT] CRQ001154 closed — SLA met ✓', type: 'success' },
-  { t: '14:17:44', msg: '[IP-CORE] CRQ001143 closure validated by Naveen P', type: 'success' },
-  { t: '14:16:20', msg: '[CCB] CCB meeting rescheduled → 16:30 UTC today', type: 'warning' },
-  { t: '14:15:05', msg: '[IP-ACCESS_CCB] CRQ001163 SLA WARNING — 7d', type: 'warning' },
-  { t: '14:14:30', msg: '[EMBEDDED] CRQ001146 change window confirmed 23:00 UTC', type: 'info' },
-  { t: '14:13:22', msg: '[OPTICS_CCB] Bulk update: 2 CRQs moved to validation', type: 'info' },
-]
-
-const BOTTLENECKS = [
-  { name: 'Approver Queue', val: 67, color: C.orange },
-  { name: 'Validator Review', val: 45, color: C.yellow },
-  { name: 'SE Team Load', val: 82, color: C.red },
-  { name: 'CCB Backlog', val: 58, color: C.purple },
-  { name: 'MOP Preparation', val: 34, color: C.cyan },
-]
-
-const TICKET_AGING_DATA = {
-  labels: ['<2 hrs', '2–6 hrs', '6–12 hrs', '12–24 hrs'],
-  datasets: [
-    { label: 'Open', data: [45, 78, 62, 34], backgroundColor: 'rgba(0,191,255,0.85)', borderRadius: 3 },
-    { label: 'At Risk', data: [12, 28, 45, 67], backgroundColor: 'rgba(255,215,0,0.85)', borderRadius: 3 },
-    { label: 'Breached', data: [3, 8, 18, 42], backgroundColor: 'rgba(255,51,102,0.85)', borderRadius: 3 },
-    { label: 'SLA Safe', data: [89, 145, 112, 78], backgroundColor: 'rgba(0,255,136,0.72)', borderRadius: 3 },
-  ],
-}
-
-const AGING_FUNNEL_DATA = {
-  labels: ['<2 days', '3–4 days', '6–8 days', '>8 days'],
-  datasets: [
-    { label: 'Released', data: [245, 178, 92, 45], backgroundColor: 'rgba(0,191,255,0.82)', borderRadius: 3 },
-    { label: 'Validation', data: [89, 134, 78, 62], backgroundColor: 'rgba(255,215,0,0.78)', borderRadius: 3 },
-    { label: 'Implementation', data: [123, 98, 67, 38], backgroundColor: 'rgba(0,255,136,0.75)', borderRadius: 3 },
-  ],
-}
-
-const HM_DOMAINS = ['IP Core', 'IP Access', 'Optics', 'Packet', 'Embedded', 'Svc Opt']
-const HM_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const HM_VALUES = [
-  [12, 8, 15, 22, 18, 5, 3], [7, 18, 25, 12, 9, 6, 2], [5, 11, 8, 19, 24, 10, 4],
-  [9, 14, 11, 7, 16, 13, 1], [15, 22, 18, 9, 12, 8, 5], [3, 7, 9, 15, 11, 4, 2],
-]
-
-// ─── HELPER COMPONENTS ───────────────────────────────────────────────────────
-function Sparkline({ data, color, idx }: { data: number[]; color: string; idx: number }) {
-  const min = Math.min(...data), max = Math.max(...data), range = max - min || 1
-  const W = 100, H = 36
-  const pts = data.map((v, i) => {
-    const x = (i / (data.length - 1)) * W
-    const y = H - 3 - ((v - min) / range) * (H - 6)
-    return [x, y] as [number, number]
-  })
-  const poly = pts.map(p => p.join(',')).join(' ')
-  const area = `0,${H} ${poly} ${W},${H}`
-  const gid = `sk${idx}`
-  return (
-    <svg width={W} height={H} style={{ overflow: 'visible', display: 'block', flexShrink: 0 }}>
-      <defs>
-        <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.32" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <polygon points={area} fill={`url(#${gid})`} />
-      <polyline points={poly} fill="none" stroke={color} strokeWidth="1.8"
-        strokeLinecap="round" strokeLinejoin="round"
-        style={{ filter: `drop-shadow(0 0 3px ${color}aa)` }} />
-    </svg>
-  )
-}
-
-function SemiGauge({ val, color, label }: { val: number; color: string; label: string }) {
-  const r = 36, cx = 52, cy = 50
-  const mathAngle = Math.PI - (val / 100) * Math.PI
-  const ex = cx + r * Math.cos(mathAngle)
-  const ey = cy - r * Math.sin(mathAngle)
-  return (
-    <div style={{ textAlign: 'center', minWidth: '90px' }}>
-      <svg width={104} height={64} viewBox="0 0 104 64">
-        <path d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 0 ${cx + r} ${cy}`}
-          fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="7" strokeLinecap="round" />
-        {val > 0 && (
-          <path d={`M ${cx - r} ${cy} A ${r} ${r} 0 ${val > 50 ? 1 : 0} 0 ${ex.toFixed(2)} ${ey.toFixed(2)}`}
-            fill="none" stroke={color} strokeWidth="7" strokeLinecap="round"
-            style={{ filter: `drop-shadow(0 0 5px ${color})` }} />
-        )}
-        <text x={cx} y={cy + 4} textAnchor="middle" fill="white" fontSize="12" fontWeight="700"
-          style={{ fontFamily: 'Inter, sans-serif' }}>{val}%</text>
-      </svg>
-      <div style={{ fontSize: '9px', color: 'rgba(160,200,250,0.55)', marginTop: '-4px', fontFamily: 'Inter, sans-serif', letterSpacing: '0.03em' }}>{label}</div>
+function renderCrqDetail(crq: CRQ, onApprove: () => void, onReject: () => void, onDelegate: () => void): string {
+  return `
+  <div class="det-header">
+    <div class="det-id">${crq.id} · Change Request</div>
+    <div class="det-title">${crq.act}</div>
+    <div class="det-actions">
+      <button class="btn btn-ok" id="det-approve-btn">✓ Approve</button>
+      <button class="btn btn-no" id="det-reject-btn">✗ Reject</button>
+      <button class="btn btn-pu" id="det-delegate-btn">Delegate ▾</button>
+      <button class="btn btn-s">Download MOP</button>
     </div>
-  )
-}
-
-function HeatCell({ val, onClick }: { val: number; onClick: () => void }) {
-  const max = 25, r = Math.min(val / max, 1)
-  const bg = r < 0.28 ? `rgba(0,255,136,${0.18 + r * 2.2})` : r < 0.58 ? `rgba(255,215,0,${0.35 + r * 0.85})` : `rgba(255,51,102,${0.3 + r * 0.7})`
-  return (
-    <div title={`${val} CRQs`} onClick={onClick} style={{
-      background: bg, borderRadius: '5px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: '10px', fontWeight: '600', color: 'rgba(255,255,255,0.9)', cursor: 'pointer', transition: 'transform 0.15s', padding: '5px 0',
-    }}
-      onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'scale(1.12)' }}
-      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'scale(1)' }}
-    >{val}</div>
-  )
-}
-
-function Badge({ status }: { status: string }) {
-  const map: Record<string, { bg: string; color: string; label: string }> = {
-    safe: { bg: 'rgba(0,255,136,0.12)', color: '#00ff88', label: '● Safe' },
-    risk: { bg: 'rgba(255,215,0,0.12)', color: '#ffd700', label: '◆ At Risk' },
-    breach: { bg: 'rgba(255,51,102,0.12)', color: '#ff3366', label: '✖ Breached' },
-  }
-  const s = map[status] ?? { bg: 'rgba(100,100,100,0.15)', color: '#aaa', label: status }
-  return (
-    <span style={{
-      background: s.bg, color: s.color, padding: '2px 8px', borderRadius: '20px', fontSize: '9px', fontWeight: '700',
-      border: `1px solid ${s.color}35`, letterSpacing: '0.04em', boxShadow: `0 0 6px ${s.color}30`,
-    }}>{s.label}</span>
-  )
-}
-
-function SectionTitle({ color, children, onClick }: { color: string; children: React.ReactNode; onClick?: () => void }) {
-  return (
-    <h3 onClick={onClick} style={{
-      fontSize: '12px', fontWeight: '800', letterSpacing: '0.07em', marginBottom: '12px', marginTop: 0,
-      display: 'flex', alignItems: 'center', gap: '6px', cursor: onClick ? 'pointer' : 'default', ...neon(color),
-    }}>{children}</h3>
-  )
-}
-
-// ─── MODAL COMPONENT ─────────────────────────────────────────────────────────
-function DetailModal({ title, data, onClose }: { title: string; data: CRQ[]; onClose: () => void }) {
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'rgba(0,5,15,0.82)', backdropFilter: 'blur(8px)',
-    }} onClick={onClose}>
-      <div style={{
-        ...glass({ padding: '24px', border: '1px solid rgba(0,191,255,0.22)' }),
-        maxWidth: '1100px', width: '92vw', maxHeight: '80vh', overflow: 'hidden',
-        display: 'flex', flexDirection: 'column', animation: 'slide-in 0.25s ease-out',
-        boxShadow: '0 8px 60px rgba(0,120,255,0.15), 0 0 40px rgba(0,0,0,0.6)',
-      }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h2 style={{ margin: 0, fontSize: '16px', fontWeight: '800', ...neon(C.cyan) }}>{title}</h2>
-          <button onClick={onClose} style={{
-            background: 'rgba(255,51,102,0.15)', border: '1px solid rgba(255,51,102,0.3)', borderRadius: '8px',
-            color: '#ff6680', padding: '6px 14px', cursor: 'pointer', fontSize: '12px', fontWeight: '700', fontFamily: 'Inter, sans-serif',
-          }}>✕ CLOSE</button>
-        </div>
-        <div style={{ fontSize: '11px', color: 'rgba(130,175,230,0.5)', marginBottom: '12px' }}>
-          Showing {data.length} record{data.length !== 1 ? 's' : ''}
-        </div>
-        <div style={{ overflowY: 'auto', overflowX: 'auto', flex: 1 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', whiteSpace: 'nowrap' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid rgba(0,191,255,0.15)' }}>
-                {['Change ID', 'Submit Date', 'Status', 'Aging', 'Impact', 'Requester', 'Summary', 'Region', 'Circle', 'Bin Group', 'Coordinator', 'Implementor'].map(h => (
-                  <th key={h} style={{
-                    padding: '8px 6px', textAlign: 'left', color: 'rgba(110,160,215,0.6)', fontWeight: '700',
-                    fontSize: '9px', letterSpacing: '0.06em', textTransform: 'uppercase', position: 'sticky', top: 0,
-                    background: 'rgba(6,18,40,0.98)',
-                  }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((c, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)', transition: 'background 0.15s' }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLTableRowElement).style.background = 'rgba(0,191,255,0.05)' }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.background = 'transparent' }}>
-                  <td style={{ padding: '6px', color: C.cyan, fontWeight: '700', fontFamily: 'monospace' }}>{c.changeId}</td>
-                  <td style={{ padding: '6px', color: 'rgba(200,225,255,0.8)' }}>{c.submitDate}</td>
-                  <td style={{ padding: '6px' }}>
-                    <span style={{
-                      padding: '2px 7px', borderRadius: '10px', fontSize: '9px', fontWeight: '700',
-                      background: c.status === 'Completed' ? 'rgba(0,255,136,0.12)' : c.status === 'Open' ? 'rgba(0,191,255,0.12)' : 'rgba(255,51,102,0.12)',
-                      color: c.status === 'Completed' ? C.green : c.status === 'Open' ? C.cyan : C.red,
-                      border: `1px solid ${c.status === 'Completed' ? C.green : c.status === 'Open' ? C.cyan : C.red}30`,
-                    }}>{c.status}</span>
-                  </td>
-                  <td style={{ padding: '6px', fontWeight: '700', color: c.aging > 8 ? C.red : c.aging > 4 ? C.yellow : C.green }}>{c.aging}d</td>
-                  <td style={{ padding: '6px', color: 'rgba(200,225,255,0.7)' }}>{c.changeImpact}</td>
-                  <td style={{ padding: '6px', color: 'rgba(200,225,255,0.7)' }}>{c.changeRequester}</td>
-                  <td style={{ padding: '6px', color: 'rgba(200,225,255,0.85)', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.summary}</td>
-                  <td style={{ padding: '6px', color: 'rgba(200,225,255,0.7)' }}>{c.region}</td>
-                  <td style={{ padding: '6px', color: 'rgba(200,225,255,0.7)' }}>{c.circle}</td>
-                  <td style={{ padding: '6px', color: 'rgba(200,225,255,0.6)', fontFamily: 'monospace', fontSize: '9px' }}>{c.binGroup}</td>
-                  <td style={{ padding: '6px', color: 'rgba(200,225,255,0.8)' }}>{c.changeCoordinator}</td>
-                  <td style={{ padding: '6px', color: 'rgba(200,225,255,0.8)' }}>{c.changeImplementor}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {data.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '40px', color: 'rgba(130,175,230,0.4)', fontSize: '12px' }}>
-              No records match the current filters.
-            </div>
-          )}
-        </div>
+    <div class="stepper">${renderStepper(crq.stage)}</div>
+  </div>
+  <div class="det-grid">
+    <div class="info-card">
+      <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--tx2)">CRQ Information</div>
+      <div class="info-rows">
+        <div class="ir"><div class="ir-lbl">CRQ No.</div><div class="ir-v" style="font-family:'DM Mono';font-size:12px">${crq.id}</div></div>
+        <div class="ir"><div class="ir-lbl">Domain</div><div class="ir-v"><span class="bg bg-bl">${crq.domain}</span></div></div>
+        <div class="ir"><div class="ir-lbl">Circle</div><div class="ir-v">${crq.circle}</div></div>
+        <div class="ir"><div class="ir-lbl">Technology</div><div class="ir-v">${crq.tech}</div></div>
+        <div class="ir"><div class="ir-lbl">Impact</div><div class="ir-v"><span class="bg ${crq.impact === 'SA' ? 'bg-re' : 'bg-gy'}">${crq.impact}</span></div></div>
+        <div class="ir"><div class="ir-lbl">Window</div><div class="ir-v">${crq.window}</div></div>
+        <div class="ir"><div class="ir-lbl">Hostname</div><div class="ir-v" style="font-family:'DM Mono';font-size:12px">${crq.host}</div></div>
+        <div class="ir"><div class="ir-lbl">Scheduled</div><div class="ir-v">${crq.sched}</div></div>
+        <div class="ir"><div class="ir-lbl">Stage</div><div class="ir-v">${stageBadges[crq.stage] || crq.stage}</div></div>
+        <div class="ir" style="border-bottom:none"><div class="ir-lbl">SLA</div><div class="ir-v"><div class="sla"><div class="slabg" style="width:80px"><div class="slaf ${crq.slaCls}" style="width:${crq.sla}%"></div></div><span class="slap" style="${crq.sla > 75 ? 'color:var(--re)' : crq.sla > 50 ? 'color:var(--am)' : 'color:var(--gr)'}">${crq.sla}%</span></div></div></div>
       </div>
     </div>
-  )
+    <div class="info-card">
+      <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--tx2)">Approval Tracker</div>
+      <div class="tracker">${renderTracker(crq.tracker)}</div>
+    </div>
+  </div>`
 }
 
-// ─── CHART OPTIONS ───────────────────────────────────────────────────────────
-const baseChartOpts = (extra = {}) => ({
-  responsive: true, maintainAspectRatio: false, animation: { duration: 800 },
-  plugins: {
-    legend: { labels: { color: 'rgba(180,210,255,0.78)', font: { size: 9, family: 'Inter' }, boxWidth: 10, padding: 10 }, position: 'top' as const },
-    tooltip: { mode: 'index' as const, intersect: false },
-  },
-  ...extra,
-})
+function renderCrqList(data: CRQ[]): string {
+  return data.map(crq => {
+    const slaColor = crq.sla > 75 ? 'var(--re)' : crq.sla > 50 ? 'var(--am)' : 'var(--gr)'
+    return `<div class="crq-item" id="li-${crq.id}" data-crqid="${crq.id}">
+      <div style="position:absolute;top:0;right:0;width:3px;height:100%;background:${crq.urgency};border-radius:0 3px 3px 0"></div>
+      <div class="crq-item-top">
+        <span class="crq-id">${crq.id}</span>
+        <span class="crq-time">${crq.sched}</span>
+      </div>
+      <div class="crq-title">${crq.act} <span style="font-size:11px;color:var(--tx3)">· ${crq.tech}</span></div>
+      <div class="crq-meta">
+        ${stageBadges[crq.stage] || `<span class="bg bg-gy">${crq.stage}</span>`}
+        <span class="bg bg-gy" style="font-size:10px">${crq.domain}</span>
+        <span class="bg bg-gy" style="font-size:10px">${crq.circle}</span>
+        <div class="sla" style="margin-left:auto"><div class="slabg" style="width:44px"><div class="slaf ${crq.slaCls}" style="width:${crq.sla}%"></div></div><span class="slap" style="color:${slaColor};font-size:10px">${crq.sla}%</span></div>
+      </div>
+    </div>`
+  }).join('')
+}
 
-const stackedYOpts = baseChartOpts({
-  indexAxis: 'y' as const,
-  scales: {
-    x: { stacked: true, ticks: { color: 'rgba(180,210,255,0.6)', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
-    y: { stacked: true, ticks: { color: 'rgba(180,210,255,0.72)', font: { size: 10 } }, grid: { display: false } },
-  },
-})
+function renderApprovalList(data: CRQ[]): string {
+  const pending = data.filter(c => c.stage !== 'Rejected' && c.stage !== 'Closed')
+  return pending.map(crq => {
+    const slaColor = crq.sla > 75 ? 'var(--re)' : crq.sla > 50 ? 'var(--am)' : 'var(--gr)'
+    return `<div class="crq-item" id="al-${crq.id}" data-approvalid="${crq.id}">
+      <div style="position:absolute;top:0;right:0;width:3px;height:100%;background:${crq.urgency};border-radius:0 3px 3px 0"></div>
+      <div class="crq-item-top">
+        <span class="crq-id">${crq.id}</span>
+        <div class="sla"><div class="slabg" style="width:44px"><div class="slaf ${crq.slaCls}" style="width:${crq.sla}%"></div></div><span class="slap" style="color:${slaColor};font-size:10px">${crq.sla}%</span></div>
+      </div>
+      <div class="crq-title">${crq.act}</div>
+      <div class="crq-meta">
+        ${stageBadges[crq.stage] || `<span class="bg bg-gy">${crq.stage}</span>`}
+        <span class="bg bg-gy" style="font-size:10px">${crq.domain} · ${crq.circle}</span>
+      </div>
+    </div>`
+  }).join('')
+}
 
-const stackedXOpts = baseChartOpts({
-  scales: {
-    x: { stacked: true, ticks: { color: 'rgba(180,210,255,0.72)', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
-    y: { stacked: true, ticks: { color: 'rgba(180,210,255,0.6)', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
-  },
-})
+// ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
+export default function Home() {
+  const [activePage, setActivePage] = useState('dashboard')
+  const [pageTitle, setPageTitle] = useState('Dashboard')
+  const [activeModal, setActiveModal] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ msg: string; visible: boolean }>({ msg: '', visible: false })
+  const [cabTab, setCabTab] = useState('cab-my')
+  const [admTab, setAdmTab] = useState('adm-approvers')
+  const [crqSearch, setCrqSearch] = useState('')
+  const [fStage, setFStage] = useState('')
+  const [fDomain, setFDomain] = useState('')
+  const [fSla, setFSla] = useState('')
+  const [selectedCrq, setSelectedCrq] = useState<CRQ | null>(null)
+  const [selectedApproval, setSelectedApproval] = useState<CRQ | null>(null)
+  const crqDetailRef = useRef<HTMLDivElement>(null)
+  const approvalDetailRef = useRef<HTMLDivElement>(null)
+  const crqListRef = useRef<HTMLDivElement>(null)
+  const approvalListRef = useRef<HTMLDivElement>(null)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-// ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
-function Home() {
-  const [mounted, setMounted] = useState(false)
-  const [dateRange, setDateRange] = useState('This Quarter')
-  const [func, setFunc] = useState('All Functions')
-  const [domain, setDomain] = useState('All Domains')
-  const [subdomain, setSubdomain] = useState('All Subdomains')
-  const [clockStr, setClockStr] = useState('')
-  const [modalTitle, setModalTitle] = useState('')
-  const [modalData, setModalData] = useState<CRQ[]>([])
-  const [showModal, setShowModal] = useState(false)
-  const feedRef = useRef<HTMLDivElement>(null)
-  const scrollRef = useRef({ pos: 0, raf: 0 })
+  const openModal = (id: string) => setActiveModal(id)
+  const closeModal = () => setActiveModal(null)
 
+  const showToast = useCallback((msg: string) => {
+    setToast({ msg, visible: true })
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToast(t => ({ ...t, visible: false })), 3000)
+  }, [])
+
+  const go = (id: string) => {
+    setActivePage(id)
+    setPageTitle(pgTitles[id] || id)
+    setSelectedCrq(null)
+    setSelectedApproval(null)
+  }
+
+  const getFilteredCrqs = () => {
+    const q = crqSearch.toLowerCase()
+    return CRQs.filter(c => {
+      if (q && !c.id.toLowerCase().includes(q) && !c.act.toLowerCase().includes(q) && !c.host.toLowerCase().includes(q)) return false
+      if (fStage && c.stage !== fStage) return false
+      if (fDomain && c.domain !== fDomain) return false
+      if (fSla === 'critical' && c.sla <= 80) return false
+      if (fSla === 'warn' && (c.sla < 50 || c.sla > 80)) return false
+      if (fSla === 'ok' && c.sla >= 50) return false
+      return true
+    })
+  }
+
+  // Render CRQ list & attach click handlers
   useEffect(() => {
-    setMounted(true)
-    const updateClock = () => setClockStr(new Date().toUTCString())
-    updateClock()
-    const cl = setInterval(updateClock, 1000)
-    const scrollFeed = () => {
-      const el = feedRef.current
-      if (el) {
-        scrollRef.current.pos += 0.5
-        if (scrollRef.current.pos >= el.scrollHeight - el.clientHeight) scrollRef.current.pos = 0
-        el.scrollTop = scrollRef.current.pos
-      }
-      scrollRef.current.raf = requestAnimationFrame(scrollFeed)
+    if (!crqListRef.current) return
+    const filtered = getFilteredCrqs()
+    crqListRef.current.innerHTML = renderCrqList(filtered)
+    const items = crqListRef.current.querySelectorAll('.crq-item')
+    items.forEach(el => {
+      el.addEventListener('click', () => {
+        const id = (el as HTMLElement).dataset.crqid
+        if (!id) return
+        items.forEach(e => e.classList.remove('sel'))
+        el.classList.add('sel')
+        const crq = CRQs.find(c => c.id === id)
+        if (crq) setSelectedCrq(crq)
+      })
+    })
+  }, [crqSearch, fStage, fDomain, fSla, activePage])
+
+  // Render approval list & attach click handlers
+  useEffect(() => {
+    if (!approvalListRef.current) return
+    approvalListRef.current.innerHTML = renderApprovalList(CRQs)
+    const items = approvalListRef.current.querySelectorAll('.crq-item')
+    items.forEach(el => {
+      el.addEventListener('click', () => {
+        const id = (el as HTMLElement).dataset.approvalid
+        if (!id) return
+        items.forEach(e => e.classList.remove('sel'))
+        el.classList.add('sel')
+        const crq = CRQs.find(c => c.id === id)
+        if (crq) setSelectedApproval(crq)
+      })
+    })
+  }, [activePage])
+
+  // Render CRQ detail & attach action button handlers
+  useEffect(() => {
+    if (!crqDetailRef.current) return
+    if (!selectedCrq) {
+      crqDetailRef.current.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--tx3)"><div style="text-align:center"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:10px;opacity:.4"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg><div style="font-size:13px">Select a CRQ to view details</div></div></div>`
+      return
     }
-    scrollRef.current.raf = requestAnimationFrame(scrollFeed)
-    return () => { clearInterval(cl); cancelAnimationFrame(scrollRef.current.raf) }
-  }, [])
+    crqDetailRef.current.innerHTML = renderCrqDetail(selectedCrq, () => openModal('m-approve'), () => openModal('m-reject'), () => openModal('m-delegate'))
+    crqDetailRef.current.querySelector('#det-approve-btn')?.addEventListener('click', () => openModal('m-approve'))
+    crqDetailRef.current.querySelector('#det-reject-btn')?.addEventListener('click', () => openModal('m-reject'))
+    crqDetailRef.current.querySelector('#det-delegate-btn')?.addEventListener('click', () => openModal('m-delegate'))
+  }, [selectedCrq])
 
-  // Derived domain/subdomain options based on function selection
-  const domainOptions = func === 'All Functions'
-    ? ['All Domains', ...new Set(CRQ_DATA.map(c => c.domain))]
-    : ['All Domains', ...Object.keys(FUNC_HIERARCHY[func] ?? {})]
-
-  const subdomainOptions = (() => {
-    if (domain === 'All Domains') return ['All Subdomains']
-    if (func !== 'All Functions' && FUNC_HIERARCHY[func]?.[domain]) {
-      return ['All Subdomains', ...FUNC_HIERARCHY[func][domain]]
+  // Render approval detail & attach action button handlers
+  useEffect(() => {
+    if (!approvalDetailRef.current) return
+    if (!selectedApproval) {
+      approvalDetailRef.current.innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--tx3)"><div style="text-align:center"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom:8px;opacity:.4"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><div style="font-size:13px">Select a CRQ to approve or reject</div></div></div>`
+      return
     }
-    // Find subdomains across all functions for this domain
-    const subs: string[] = []
-    for (const fk of Object.values(FUNC_HIERARCHY)) {
-      if (fk[domain]) subs.push(...fk[domain])
-    }
-    return ['All Subdomains', ...new Set(subs)]
-  })()
+    approvalDetailRef.current.innerHTML = renderCrqDetail(selectedApproval, () => openModal('m-approve'), () => openModal('m-reject'), () => openModal('m-delegate'))
+    approvalDetailRef.current.querySelector('#det-approve-btn')?.addEventListener('click', () => openModal('m-approve'))
+    approvalDetailRef.current.querySelector('#det-reject-btn')?.addEventListener('click', () => openModal('m-reject'))
+    approvalDetailRef.current.querySelector('#det-delegate-btn')?.addEventListener('click', () => openModal('m-delegate'))
+  }, [selectedApproval])
 
-  // Reset dependent filters
-  const handleFuncChange = useCallback((val: string) => {
-    setFunc(val)
-    setDomain('All Domains')
-    setSubdomain('All Subdomains')
-  }, [])
-
-  const handleDomainChange = useCallback((val: string) => {
-    setDomain(val)
-    setSubdomain('All Subdomains')
-  }, [])
-
-  // Filtered data
-  const filtered = filterCRQs(CRQ_DATA, func, domain, subdomain, dateRange)
-  const kpis = getKPIs(filtered)
-  const slaRows = getSLARows(filtered)
-  const breachRisk = getBreachRisk(filtered)
-  const domainSLA = getDomainSLA(filtered)
-  const stageDist = getStageDistribution(filtered)
-  const domainCRQ = getDomainCRQData(filtered)
-
-  const openModal = useCallback((title: string, data: CRQ[]) => {
-    setModalTitle(title)
-    setModalData(data)
-    setShowModal(true)
-  }, [])
-
-  const radarData = {
-    labels: ['IP Core', 'IP Access', 'Optics', 'Packet', 'Embedded', 'Svc Opt'],
-    datasets: [
-      {
-        label: 'SE Workload', data: [
-          filtered.filter(c => c.domain.includes('IP Core') && !c.domain.includes('CCB')).length * 12,
-          filtered.filter(c => c.domain.includes('IP Access') && !c.domain.includes('CCB')).length * 10,
-          filtered.filter(c => c.domain.includes('Optics') && !c.domain.includes('CCB')).length * 11,
-          filtered.filter(c => c.domain.includes('Packet') && !c.domain.includes('CCB')).length * 15,
-          filtered.filter(c => c.domain.includes('Embedded') && !c.domain.includes('CCB')).length * 18,
-          filtered.filter(c => c.domain.includes('Service') && !c.domain.includes('CCB')).length * 14,
-        ],
-        backgroundColor: 'rgba(0,191,255,0.1)', borderColor: C.blue,
-        pointBackgroundColor: C.blue, borderWidth: 2, pointRadius: 3,
-      },
-      {
-        label: 'CCB Workload', data: [
-          filtered.filter(c => c.domain.includes('IP Core') && c.domain.includes('CCB')).length * 12,
-          filtered.filter(c => c.domain.includes('IP Access') && c.domain.includes('CCB')).length * 10,
-          filtered.filter(c => c.domain.includes('Optics') && c.domain.includes('CCB')).length * 11,
-          filtered.filter(c => c.domain.includes('Packet') && c.domain.includes('CCB')).length * 15,
-          filtered.filter(c => c.domain.includes('Embedded') && c.domain.includes('CCB')).length * 18,
-          filtered.filter(c => c.domain.includes('Service') && c.domain.includes('CCB')).length * 14,
-        ],
-        backgroundColor: 'rgba(0,255,136,0.1)', borderColor: C.green,
-        pointBackgroundColor: C.green, borderWidth: 2, pointRadius: 3,
-      },
-    ],
-  }
-
-  // Lifecycle gauge data
-  const lifecycleGauges = LIFECYCLE_STAGES.map((s, i) => {
-    const count = filtered.filter(c => c.stage === s).length
-    const pct = filtered.length > 0 ? Math.round((count / filtered.length) * 100) : 0
-    const colors = [C.cyan, C.green, C.yellow, C.purple, C.orange, C.blue, C.teal]
-    return { label: s.length > 14 ? s.slice(0, 12) + '…' : s, val: pct, color: colors[i % colors.length] }
-  })
-
-  const selectStyle: CSSProperties = {
-    background: 'rgba(8, 20, 46, 0.88)', color: 'rgba(180, 215, 255, 0.9)',
-    border: '1px solid rgba(0,191,255,0.18)', borderRadius: '8px', padding: '7px 12px',
-    fontSize: '11px', cursor: 'pointer', outline: 'none', fontFamily: 'Inter, sans-serif',
-    transition: 'border-color 0.2s',
-  }
+  const filteredCrqs = getFilteredCrqs()
 
   return (
-    <div style={{
-      background: 'linear-gradient(145deg,#010913 0%,#020c1c 45%,#030d20 100%)',
-      minHeight: '100vh', fontFamily: "'Inter','Segoe UI',sans-serif", color: '#cce0ff', overflowX: 'hidden',
-    }}>
-      {/* Ambient glow */}
-      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0, background: 'radial-gradient(ellipse 90% 45% at 50% 0%,rgba(0,80,180,0.12) 0%,transparent 65%)' }} />
-      {/* Scan-line */}
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '1px', background: 'linear-gradient(90deg,transparent,rgba(0,191,255,0.3),transparent)', animation: 'scan-line 8s linear infinite', pointerEvents: 'none', zIndex: 1 }} />
+    <>
+      <style>{`
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Mono:wght@400;500&display=swap');
 
-      {showModal && <DetailModal title={modalTitle} data={modalData} onClose={() => setShowModal(false)} />}
+:root{
+  --nav:#0c1428;--nav-h:#162040;--nav-a:#1b3560;
+  --ac:#2563eb;--ac2:#1d4ed8;--ac-s:#eff6ff;
+  --te:#0d9488;--te-s:#f0fdfa;
+  --am:#d97706;--am-s:#fffbeb;
+  --re:#dc2626;--re-s:#fef2f2;
+  --gr:#16a34a;--gr-s:#f0fdf4;
+  --pu:#7c3aed;--pu-s:#f5f3ff;
+  --bd:#e5e7eb;--bd2:#f3f4f6;
+  --tx:#111827;--tx2:#6b7280;--tx3:#9ca3af;
+  --bg:#f1f5f9;--wh:#fff;
+  --r:10px;--sh:0 1px 3px rgba(0,0,0,.07),0 1px 2px rgba(0,0,0,.04);
+  --sh2:0 4px 16px rgba(0,0,0,.1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--tx);display:flex;height:100vh;overflow:hidden;font-size:14px}
+#root{display:flex;width:100%;height:100vh;overflow:hidden}
 
-      <div style={{ maxWidth: '1900px', margin: '0 auto', padding: '14px 18px', position: 'relative', zIndex: 2 }}>
+/* NAV */
+.nav{width:210px;min-width:210px;background:var(--nav);display:flex;flex-direction:column;height:100vh;overflow-y:auto}
+.nav-logo{padding:18px 16px 14px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;gap:10px}
+.logo-mark{width:30px;height:30px;background:linear-gradient(135deg,#3b82f6,#06b6d4);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;letter-spacing:-.5px;flex-shrink:0}
+.logo-name{color:#fff;font-size:15px;font-weight:600;letter-spacing:-.3px}
+.logo-ver{color:rgba(255,255,255,.35);font-size:10px}
+.nav-grp{padding:14px 8px 2px}
+.nav-grp-lbl{color:rgba(255,255,255,.28);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;padding:0 8px;margin-bottom:3px}
+.ni{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer;color:rgba(255,255,255,.5);font-size:13px;font-weight:400;transition:all .13s;margin-bottom:1px;position:relative}
+.ni:hover{background:var(--nav-h);color:rgba(255,255,255,.8)}
+.ni.on{background:var(--nav-a);color:#fff;font-weight:500}
+.ni svg{width:15px;height:15px;flex-shrink:0;opacity:.75}
+.ni.on svg{opacity:1}
+.ni-badge{margin-left:auto;background:var(--ac);color:#fff;font-size:10px;font-weight:600;padding:2px 6px;border-radius:10px;line-height:1.4}
+.ni-badge.red{background:var(--re)}
+.ni-badge.amber{background:var(--am)}
+.nav-foot{margin-top:auto;padding:10px 8px;border-top:1px solid rgba(255,255,255,.07)}
+.ucard{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer}
+.ucard:hover{background:var(--nav-h)}
+.uav{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#7c3aed);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#fff;flex-shrink:0}
+.uname{color:rgba(255,255,255,.8);font-size:12px;font-weight:500}
+.urole{color:rgba(255,255,255,.32);font-size:10px}
 
-        {/* ═══ HEADER / FILTERS ═══ */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px', flexWrap: 'wrap', gap: '10px' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '3px' }}>
-              <div style={{
-                width: '38px', height: '38px', borderRadius: '10px', flexShrink: 0,
-                background: 'linear-gradient(135deg,rgba(0,150,255,0.3),rgba(0,50,140,0.5))',
-                border: '1px solid rgba(0,191,255,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px',
-                boxShadow: '0 0 18px rgba(0,191,255,0.28)', animation: 'glow-pulse 3s ease-in-out infinite',
-              }}>📡</div>
-              <h1 style={{
-                margin: 0, fontSize: '20px', fontWeight: '900', letterSpacing: '-0.025em',
-                background: 'linear-gradient(90deg,#00bfff,#00e5ff 40%,#00ff88)', WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent', backgroundClip: 'text',
-              }}>NOC CRQ Analytics</h1>
-              <span style={{
-                background: 'rgba(0,255,136,0.12)', color: '#00ff88', padding: '3px 10px', borderRadius: '20px',
-                fontSize: '9px', fontWeight: '800', border: '1px solid rgba(0,255,136,0.28)',
-                letterSpacing: '0.12em', animation: 'pulse 2s ease-in-out infinite',
-              }}>● LIVE</span>
-              <span style={{
-                background: 'rgba(0,191,255,0.08)', color: 'rgba(0,191,255,0.7)', padding: '3px 10px', borderRadius: '20px',
-                fontSize: '9px', fontWeight: '600', border: '1px solid rgba(0,191,255,0.15)', letterSpacing: '0.06em',
-              }}>COMMAND CENTER v4.2</span>
-            </div>
-            <p style={{ margin: 0, fontSize: '11px', color: 'rgba(120,160,210,0.5)', letterSpacing: '0.04em' }}>
-              Telecom Network Operations · Change Request Intelligence · {clockStr}
-            </p>
+/* MAIN SHELL */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:var(--wh);border-bottom:1px solid var(--bd);padding:0 20px;height:52px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+.page-ttl{font-size:15px;font-weight:600;flex:1}
+.tb-actions{display:flex;align-items:center;gap:8px}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 13px;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;border:none;font-family:inherit;transition:all .13s;white-space:nowrap}
+.btn-p{background:var(--ac);color:#fff}.btn-p:hover{background:var(--ac2)}
+.btn-s{background:var(--wh);color:var(--tx);border:1px solid var(--bd)}.btn-s:hover{background:var(--bd2)}
+.btn-ok{background:var(--gr-s);color:var(--gr);border:1px solid #86efac}
+.btn-no{background:var(--re-s);color:var(--re);border:1px solid #fca5a5}
+.btn-warn{background:var(--am-s);color:var(--am);border:1px solid #fcd34d}
+.btn-pu{background:var(--pu-s);color:var(--pu);border:1px solid #c4b5fd}
+.iBtn{width:32px;height:32px;border-radius:8px;background:var(--wh);border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--tx2);transition:all .13s}
+.iBtn:hover{background:var(--bd2);color:var(--tx)}
+
+/* CONTENT AREA */
+.content{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.page{display:none;flex:1;overflow:hidden;flex-direction:column}
+.page.on{display:flex}
+
+/* CARDS */
+.card{background:var(--wh);border:1px solid var(--bd);border-radius:var(--r);box-shadow:var(--sh)}
+.ch{padding:14px 18px;border-bottom:1px solid var(--bd2);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.ct{font-size:13px;font-weight:600}
+.cb{padding:16px 18px}
+
+/* BADGES */
+.bg{display:inline-flex;align-items:center;gap:3px;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap}
+.bg-bl{background:var(--ac-s);color:var(--ac)}
+.bg-te{background:var(--te-s);color:var(--te)}
+.bg-am{background:var(--am-s);color:var(--am)}
+.bg-re{background:var(--re-s);color:var(--re)}
+.bg-gr{background:var(--gr-s);color:var(--gr)}
+.bg-pu{background:var(--pu-s);color:var(--pu)}
+.bg-gy{background:var(--bd2);color:var(--tx2)}
+
+/* METRICS ROW */
+.mx{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;padding:16px 16px 0;flex-shrink:0}
+.mc{background:var(--wh);border:1px solid var(--bd);border-radius:var(--r);padding:14px 16px;position:relative;overflow:hidden}
+.mc::after{content:'';position:absolute;top:0;left:0;width:3px;height:100%;border-radius:3px 0 0 3px}
+.mc.bl::after{background:var(--ac)}.mc.te::after{background:var(--te)}.mc.am::after{background:var(--am)}.mc.re::after{background:var(--re)}
+.mc-lbl{font-size:11px;color:var(--tx2);font-weight:500;margin-bottom:4px}
+.mc-v{font-size:24px;font-weight:600;line-height:1;margin-bottom:2px}
+.mc.bl .mc-v{color:var(--ac)}.mc.te .mc-v{color:var(--te)}.mc.am .mc-v{color:var(--am)}.mc.re .mc-v{color:var(--re)}
+.mc-s{font-size:11px;color:var(--tx3)}
+
+/* SLA */
+.sla{display:flex;align-items:center;gap:7px}
+.slabg{width:56px;height:5px;border-radius:3px;background:#e5e7eb;overflow:hidden;flex-shrink:0}
+.slaf{height:100%;border-radius:3px}
+.s-gr{background:#16a34a}.s-am{background:#d97706}.s-re{background:#dc2626}.s-br{background:#9ca3af}
+.slap{font-size:11px;font-weight:600;min-width:30px}
+
+/* TABLE */
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+thead th{background:var(--bd2);padding:9px 13px;text-align:left;font-size:11px;font-weight:600;color:var(--tx2);text-transform:uppercase;letter-spacing:.05em;white-space:nowrap}
+thead th:first-child{border-radius:8px 0 0 8px}
+thead th:last-child{border-radius:0 8px 8px 0}
+tbody tr{border-bottom:1px solid var(--bd2);transition:background .1s;cursor:pointer}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:#f8faff}
+tbody tr.selected{background:#eff6ff!important;border-left:3px solid var(--ac)}
+td{padding:11px 13px;font-size:13px;vertical-align:middle}
+
+/* SPLIT LAYOUT */
+.split{display:flex;flex:1;overflow:hidden;gap:0}
+.split-list{width:380px;min-width:300px;border-right:1px solid var(--bd);display:flex;flex-direction:column;background:var(--wh);overflow:hidden;flex-shrink:0}
+.split-detail{flex:1;overflow-y:auto;background:var(--bg);padding:16px}
+
+/* CRQ LIST ITEMS */
+.crq-list-header{padding:12px 14px;border-bottom:1px solid var(--bd2);display:flex;align-items:center;gap:8px;flex-shrink:0}
+.crq-list-header input{flex:1;font-size:12px;padding:6px 10px;border:1px solid var(--bd);border-radius:7px;background:var(--bg);outline:none;font-family:inherit}
+.crq-list-header input:focus{border-color:var(--ac)}
+.crq-list-scr{overflow-y:auto;flex:1}
+.crq-item{padding:12px 14px;border-bottom:1px solid var(--bd2);cursor:pointer;transition:background .1s;position:relative}
+.crq-item:hover{background:#f8faff}
+.crq-item.sel{background:#eff6ff;border-left:3px solid var(--ac)}
+.crq-item-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:5px}
+.crq-id{font-size:12px;font-weight:600;color:var(--ac);font-family:'DM Mono',monospace}
+.crq-time{font-size:11px;color:var(--tx3)}
+.crq-title{font-size:13px;font-weight:500;margin-bottom:4px;color:var(--tx)}
+.crq-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+
+/* DETAIL PANEL */
+.det-header{background:var(--wh);border:1px solid var(--bd);border-radius:var(--r);padding:16px 18px;margin-bottom:14px;box-shadow:var(--sh)}
+.det-id{font-size:11px;color:var(--tx3);font-family:'DM Mono';margin-bottom:4px}
+.det-title{font-size:17px;font-weight:600;margin-bottom:10px}
+.det-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.stepper{display:flex;overflow-x:auto;gap:0;margin-bottom:2px}
+.sn{display:flex;align-items:center;gap:5px;padding:5px 12px;font-size:11px;font-weight:500;white-space:nowrap;background:var(--wh);border:1px solid var(--bd);border-right:none}
+.sn:first-child{border-radius:7px 0 0 7px}
+.sn:last-child{border-radius:0 7px 7px 0;border-right:1px solid var(--bd)}
+.sn.done{background:var(--te-s);border-color:#99f6e4;color:var(--te)}
+.sn.active{background:var(--ac-s);border-color:#93c5fd;color:var(--ac)}
+.sn.pend{color:var(--tx3)}
+.sn-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.sn.done .sn-dot{background:var(--te)}.sn.active .sn-dot{background:var(--ac)}.sn.pend .sn-dot{background:var(--bd)}
+
+.det-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.info-card{background:var(--wh);border:1px solid var(--bd);border-radius:var(--r);padding:14px 16px;box-shadow:var(--sh)}
+.info-rows{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.ir{padding:9px 0;border-bottom:1px solid var(--bd2)}
+.ir:nth-last-child(-n+2){border-bottom:none}
+.ir-lbl{font-size:10px;color:var(--tx3);font-weight:500;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+.ir-v{font-size:13px;font-weight:500}
+
+/* TRACKER */
+.tracker{display:flex;flex-direction:column;gap:8px}
+.tr-row{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;border:1px solid var(--bd)}
+.tr-row.done{background:var(--te-s);border-color:#99f6e4}
+.tr-row.act{background:var(--ac-s);border-color:#93c5fd}
+.tr-icon{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0}
+.tr-done{background:var(--te-s);color:var(--te);border:1.5px solid #99f6e4}
+.tr-act{background:var(--ac-s);color:var(--ac);border:1.5px solid #93c5fd}
+.tr-pend{background:var(--bd2);color:var(--tx3);border:1.5px solid var(--bd)}
+.tr-lbl{font-size:13px;font-weight:500}
+.tr-sub{font-size:11px;color:var(--tx2)}
+
+/* MODAL */
+.mbg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;align-items:center;justify-content:center}
+.mbg.open{display:flex}
+.modal{background:var(--wh);border-radius:14px;width:460px;max-width:95vw;box-shadow:var(--sh2);overflow:hidden}
+.mh{padding:16px 18px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between}
+.mt{font-size:14px;font-weight:600}
+.mx-btn{cursor:pointer;color:var(--tx2);font-size:20px;line-height:1}
+.mb{padding:18px}
+.mf{padding:12px 18px;border-top:1px solid var(--bd);display:flex;gap:8px;justify-content:flex-end}
+.fr{margin-bottom:12px}
+.fl{font-size:11px;font-weight:500;color:var(--tx2);margin-bottom:4px;display:block}
+.fr input,.fr select,.fr textarea{width:100%;font-family:inherit;font-size:13px;padding:8px 11px;border:1px solid var(--bd);border-radius:8px;background:var(--wh);color:var(--tx);outline:none;transition:border .13s}
+.fr input:focus,.fr select:focus,.fr textarea:focus{border-color:var(--ac);box-shadow:0 0 0 3px rgba(37,99,235,.09)}
+
+/* TABS */
+.tabs{display:flex;border-bottom:1px solid var(--bd);flex-shrink:0;padding:0 16px}
+.tab{padding:9px 16px;font-size:12px;font-weight:500;color:var(--tx2);cursor:pointer;border-bottom:2px solid transparent;transition:all .13s;margin-bottom:-1px}
+.tab:hover{color:var(--tx)}
+.tab.on{color:var(--ac);border-bottom-color:var(--ac)}
+
+/* SCROLLABLE CONTENT */
+.scrollable{overflow-y:auto;flex:1;padding:16px}
+
+/* ALERT */
+.alert{padding:10px 14px;border-radius:8px;font-size:12px;display:flex;align-items:flex-start;gap:9px;margin-bottom:14px}
+.a-info{background:var(--ac-s);color:#1e40af;border:1px solid #bfdbfe}
+.a-warn{background:var(--am-s);color:#92400e;border:1px solid #fcd34d}
+.a-ok{background:var(--gr-s);color:#166534;border:1px solid #bbf7d0}
+
+/* CHARTS */
+.bar-ch{display:flex;align-items:flex-end;gap:8px;height:72px;padding-top:8px}
+.bc{display:flex;flex-direction:column;align-items:center;gap:3px;flex:1}
+.bb{width:100%;border-radius:4px 4px 0 0;min-height:4px}
+.bl{font-size:10px;color:var(--tx3);white-space:nowrap}
+.bv{font-size:11px;font-weight:600;color:var(--tx2)}
+
+/* QUORUM */
+.qbar{background:#e5e7eb;border-radius:4px;height:7px;overflow:hidden;margin:6px 0}
+.qfill{height:100%;background:var(--ac);border-radius:4px}
+
+/* TOAST */
+#chm-toast{position:fixed;bottom:20px;right:20px;background:#111827;color:#fff;padding:11px 16px;border-radius:10px;font-size:12px;font-weight:500;box-shadow:var(--sh2);transition:all .28s;z-index:200;max-width:320px;pointer-events:none}
+
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:4px}
+
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.dv{height:1px;background:var(--bd2);margin:12px 0}
+      `}</style>
+
+      {/* NAV */}
+      <aside className="nav">
+        <div className="nav-logo">
+          <div className="logo-mark">CHM</div>
+          <div><div className="logo-name">CHM Portal</div><div className="logo-ver">Change Management</div></div>
+        </div>
+        <div className="nav-grp">
+          <div className="nav-grp-lbl">Main</div>
+          <div className={`ni${activePage === 'dashboard' ? ' on' : ''}`} onClick={() => go('dashboard')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            Dashboard
           </div>
+        </div>
+        <div className="nav-grp">
+          <div className="nav-grp-lbl">CRQ Management</div>
+          <div className={`ni${activePage === 'crqs' ? ' on' : ''}`} onClick={() => go('crqs')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+            All CRQs<span className="ni-badge">42</span>
+          </div>
+          <div className={`ni${activePage === 'myapprovals' ? ' on' : ''}`} onClick={() => go('myapprovals')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            My Approvals<span className="ni-badge red">8</span>
+          </div>
+        </div>
+        <div className="nav-grp">
+          <div className="nav-grp-lbl">CAB</div>
+          <div className={`ni${activePage === 'cabsessions' ? ' on' : ''}`} onClick={() => go('cabsessions')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            CAB Sessions<span className="ni-badge amber">3</span>
+          </div>
+          <div className={`ni${activePage === 'cabplanning' ? ' on' : ''}`} onClick={() => go('cabplanning')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            CAB Planning
+          </div>
+        </div>
+        <div className="nav-grp">
+          <div className="nav-grp-lbl">Reports</div>
+          <div className={`ni${activePage === 'analytics' ? ' on' : ''}`} onClick={() => go('analytics')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+            Analytics
+          </div>
+        </div>
+        <div className="nav-grp">
+          <div className="nav-grp-lbl">Admin</div>
+          <div className={`ni${activePage === 'admin' ? ' on' : ''}`} onClick={() => go('admin')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M21 12h-2M5 12H3M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M12 21v-2M12 5V3"/></svg>
+            Admin Config
+          </div>
+        </div>
+        <div className="nav-foot">
+          <div className="ucard">
+            <div className="uav">AV</div>
+            <div><div className="uname">Amit Verma</div><div className="urole">CTO · All Domains</div></div>
+          </div>
+        </div>
+      </aside>
 
-          {/* Filter controls: Date Range, Function, Domain, Subdomain */}
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              <label style={{ fontSize: '8px', color: 'rgba(130,175,230,0.45)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '700' }}>Date Range</label>
-              <select value={dateRange} onChange={e => setDateRange(e.target.value)} style={selectStyle}>
-                {['Last 7 Days', 'Last 30 Days', 'Last 90 Days', 'This Quarter', 'All Time'].map(o => <option key={o}>{o}</option>)}
-              </select>
+      <main className="main">
+        {/* TOP BAR */}
+        <div className="topbar">
+          <div className="page-ttl">{pageTitle}</div>
+          <div className="tb-actions">
+            <div className="iBtn" title="Notifications">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              <label style={{ fontSize: '8px', color: 'rgba(130,175,230,0.45)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '700' }}>Function</label>
-              <select value={func} onChange={e => handleFuncChange(e.target.value)} style={selectStyle}>
-                {['All Functions', 'SE', 'CCB'].map(o => <option key={o}>{o}</option>)}
-              </select>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              <label style={{ fontSize: '8px', color: 'rgba(130,175,230,0.45)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '700' }}>Domain</label>
-              <select value={domain} onChange={e => handleDomainChange(e.target.value)} style={selectStyle}>
-                {domainOptions.map(o => <option key={o}>{o}</option>)}
-              </select>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              <label style={{ fontSize: '8px', color: 'rgba(130,175,230,0.45)', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: '700' }}>Subdomain</label>
-              <select value={subdomain} onChange={e => setSubdomain(e.target.value)} style={selectStyle}>
-                {subdomainOptions.map(o => <option key={o}>{o}</option>)}
-              </select>
-            </div>
-            <button onClick={() => { setDateRange('This Quarter'); handleFuncChange('All Functions') }} style={{
-              background: 'linear-gradient(135deg,rgba(0,100,200,0.55),rgba(0,191,255,0.28))',
-              color: '#00e5ff', border: '1px solid rgba(0,191,255,0.32)', borderRadius: '8px',
-              padding: '7px 16px', fontSize: '11px', fontWeight: '700', cursor: 'pointer',
-              letterSpacing: '0.06em', fontFamily: 'Inter, sans-serif', boxShadow: '0 0 12px rgba(0,191,255,0.15)',
-              transition: 'box-shadow 0.2s', alignSelf: 'flex-end',
-            }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 20px rgba(0,191,255,0.35)' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 12px rgba(0,191,255,0.15)' }}
-            >↻ REFRESH</button>
+            <button className="btn btn-p" onClick={() => openModal('m-new-crq')}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              New CRQ
+            </button>
           </div>
         </div>
 
-        {/* ═══ KPI CARDS ═══ */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px', marginBottom: '12px' }}>
-          {kpis.map((k, i) => (
-            <div key={i} onClick={() => openModal(k.title, k.title === 'Total CRQs' ? filtered : k.title === 'Open CRQs' ? filtered.filter(c => c.status === 'Open') : k.title === 'Completed' ? filtered.filter(c => c.status === 'Completed') : k.title === 'Rejected' ? filtered.filter(c => c.status === 'Rejected') : filtered)}
-              style={{
-                ...glass({ padding: '14px 16px', position: 'relative', overflow: 'hidden', cursor: 'pointer' }),
-                transition: 'transform 0.2s, box-shadow 0.2s',
-              }}
-              onMouseEnter={e => { const el = e.currentTarget as HTMLDivElement; el.style.transform = 'translateY(-3px)'; el.style.boxShadow = `0 10px 36px rgba(0,0,0,0.55), 0 0 24px ${k.color}22` }}
-              onMouseLeave={e => { const el = e.currentTarget as HTMLDivElement; el.style.transform = 'translateY(0)'; el.style.boxShadow = '0 4px 28px rgba(0,0,0,0.45)' }}>
-              <div style={{ position: 'absolute', top: '-25px', right: '-18px', width: '90px', height: '90px', borderRadius: '50%', background: `radial-gradient(circle,${k.color}16 0%,transparent 70%)`, pointerEvents: 'none' }} />
-              <div style={{ position: 'absolute', top: 0, left: '16px', right: '16px', height: '2px', background: `linear-gradient(90deg,transparent,${k.color}80,transparent)`, borderRadius: '0 0 2px 2px' }} />
-              <div style={{ fontSize: '10px', color: 'rgba(130,175,230,0.58)', letterSpacing: '0.08em', marginBottom: '7px', textTransform: 'uppercase', fontWeight: '600' }}>{k.title}</div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: '8px' }}>
-                <div>
-                  <div style={{ fontSize: '26px', fontWeight: '900', lineHeight: 1, ...neon(k.color) }}>{k.value}</div>
-                  <div style={{ marginTop: '5px', fontSize: '11px', fontWeight: '700', color: k.up ? '#00ff88' : '#ff6680', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                    <span>{k.up ? '▲' : '▼'}</span>{k.change}
-                    <span style={{ fontSize: '9px', fontWeight: '400', color: 'rgba(130,175,230,0.4)', marginLeft: '2px' }}>vs last period</span>
+        <div className="content">
+
+          {/* ═══ DASHBOARD ═══ */}
+          <div className={`page${activePage === 'dashboard' ? ' on' : ''}`}>
+            <div className="mx">
+              <div className="mc bl"><div className="mc-lbl">Total Active CRQs</div><div className="mc-v">42</div><div className="mc-s">↑ 6 from last week</div></div>
+              <div className="mc te"><div className="mc-lbl">Pending Approvals</div><div className="mc-v">17</div><div className="mc-s">Awaiting action</div></div>
+              <div className="mc am"><div className="mc-lbl">SLA Breaches</div><div className="mc-v">4</div><div className="mc-s">Auto-escalated</div></div>
+              <div className="mc re"><div className="mc-lbl">Rejected CRQs</div><div className="mc-v">5</div><div className="mc-s">This week</div></div>
+            </div>
+            <div className="scrollable">
+              <div className="g2" style={{marginBottom:'14px'}}>
+                <div className="card">
+                  <div className="ch"><div className="ct">CRQ Status</div></div>
+                  <div className="cb">
+                    <div style={{display:'flex',alignItems:'center',gap:'20px'}}>
+                      <svg width="90" height="90" viewBox="0 0 90 90" style={{flexShrink:0}}>
+                        <circle cx="45" cy="45" r="34" fill="none" stroke="#e5e7eb" strokeWidth="12"/>
+                        <circle cx="45" cy="45" r="34" fill="none" stroke="#2563eb" strokeWidth="12" strokeDasharray="85 129" strokeDashoffset="0" strokeLinecap="round"/>
+                        <circle cx="45" cy="45" r="34" fill="none" stroke="#dc2626" strokeWidth="12" strokeDasharray="27 129" strokeDashoffset="-85" strokeLinecap="round"/>
+                        <circle cx="45" cy="45" r="34" fill="none" stroke="#d97706" strokeWidth="12" strokeDasharray="17 129" strokeDashoffset="-112" strokeLinecap="round"/>
+                        <text x="45" y="41" textAnchor="middle" fontSize="16" fontWeight="600" fill="#111827">42</text>
+                        <text x="45" y="53" textAnchor="middle" fontSize="8" fill="#9ca3af">Total</text>
+                      </svg>
+                      <div style={{display:'flex',flexDirection:'column',gap:'7px'}}>
+                        <div style={{display:'flex',alignItems:'center',gap:'7px',fontSize:'12px'}}><div style={{width:'8px',height:'8px',borderRadius:'50%',background:'#2563eb'}}></div>Approved <b>27</b></div>
+                        <div style={{display:'flex',alignItems:'center',gap:'7px',fontSize:'12px'}}><div style={{width:'8px',height:'8px',borderRadius:'50%',background:'#dc2626'}}></div>Rejected <b>8</b></div>
+                        <div style={{display:'flex',alignItems:'center',gap:'7px',fontSize:'12px'}}><div style={{width:'8px',height:'8px',borderRadius:'50%',background:'#d97706'}}></div>Pending <b>5</b></div>
+                        <div style={{display:'flex',alignItems:'center',gap:'7px',fontSize:'12px'}}><div style={{width:'8px',height:'8px',borderRadius:'50%',background:'#0d9488'}}></div>CAB Review <b>2</b></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <Sparkline data={k.spark} color={k.color} idx={i} />
+                <div className="card">
+                  <div className="ch"><div className="ct">SLA Breaches by Domain</div></div>
+                  <div className="cb">
+                    <div style={{display:'flex',flexDirection:'column',gap:'9px'}}>
+                      <div><div style={{display:'flex',justifyContent:'space-between',fontSize:'12px',marginBottom:'3px'}}><span style={{color:'var(--tx2)'}}>IP Core</span><span style={{fontWeight:600,color:'var(--re)'}}>13</span></div><div style={{background:'#e5e7eb',borderRadius:'3px',height:'7px'}}><div style={{background:'#dc2626',width:'85%',height:'100%',borderRadius:'3px'}}></div></div></div>
+                      <div><div style={{display:'flex',justifyContent:'space-between',fontSize:'12px',marginBottom:'3px'}}><span style={{color:'var(--tx2)'}}>Optics</span><span style={{fontWeight:600,color:'var(--am)'}}>8</span></div><div style={{background:'#e5e7eb',borderRadius:'3px',height:'7px'}}><div style={{background:'#d97706',width:'52%',height:'100%',borderRadius:'3px'}}></div></div></div>
+                      <div><div style={{display:'flex',justifyContent:'space-between',fontSize:'12px',marginBottom:'3px'}}><span style={{color:'var(--tx2)'}}>Packet</span><span style={{fontWeight:600,color:'var(--ac)'}}>3</span></div><div style={{background:'#e5e7eb',borderRadius:'3px',height:'7px'}}><div style={{background:'#2563eb',width:'20%',height:'100%',borderRadius:'3px'}}></div></div></div>
+                      <div><div style={{display:'flex',justifyContent:'space-between',fontSize:'12px',marginBottom:'3px'}}><span style={{color:'var(--tx2)'}}>Embedded</span><span style={{fontWeight:600,color:'var(--te)'}}>7</span></div><div style={{background:'#e5e7eb',borderRadius:'3px',height:'7px'}}><div style={{background:'#0d9488',width:'45%',height:'100%',borderRadius:'3px'}}></div></div></div>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-
-        {/* ═══ MAIN GRID — LEFT | CENTER | RIGHT ═══ */}
-        <div style={{ display: 'grid', gridTemplateColumns: '27% 1fr 23%', gap: '10px', marginBottom: '10px' }}>
-
-          {/* ── LEFT PANEL ── */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-
-            {/* SLA Countdown Table */}
-            <div style={glass({ padding: '14px', cursor: 'pointer' })} onClick={() => openModal('SLA Countdown — Open CRQs', filtered.filter(c => c.status === 'Open'))}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <SectionTitle color={C.cyan}>⏱ SLA COUNTDOWN</SectionTitle>
-                <span style={{ fontSize: '9px', color: 'rgba(130,175,230,0.4)', fontFamily: 'monospace' }}>{clockStr.slice(17, 25)} UTC</span>
+              <div className="card" style={{marginBottom:'14px'}}>
+                <div className="ch"><div className="ct">Approval TAT by Stage (avg hrs)</div><select style={{fontSize:'11px',padding:'4px 8px',border:'1px solid var(--bd)',borderRadius:'6px',background:'var(--wh)'}}><option>This Week</option><option>This Month</option></select></div>
+                <div className="cb" style={{paddingBottom:'8px'}}>
+                  <div className="bar-ch">
+                    <div className="bc"><div className="bv">22h</div><div className="bb" style={{height:'68px',background:'#2563eb',opacity:.8}}></div><div className="bl">Authorization</div></div>
+                    <div className="bc"><div className="bv">16h</div><div className="bb" style={{height:'48px',background:'#0d9488',opacity:.8}}></div><div className="bl">Scheduling</div></div>
+                    <div className="bc"><div className="bv">11h</div><div className="bb" style={{height:'32px',background:'#7c3aed',opacity:.8}}></div><div className="bl">CAB</div></div>
+                    <div className="bc"><div className="bv">6h</div><div className="bb" style={{height:'18px',background:'#d97706',opacity:.8}}></div><div className="bl">Implementation</div></div>
+                  </div>
+                </div>
               </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px', whiteSpace: 'nowrap' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid rgba(0,191,255,0.1)' }}>
-                      {['CRQ ID', 'Domain', 'Engineer', 'Time Left', 'Status'].map(h => (
-                        <th key={h} style={{ padding: '4px 5px', textAlign: 'left', color: 'rgba(110,160,215,0.55)', fontWeight: '700', fontSize: '9px', letterSpacing: '0.06em' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {slaRows.map((r, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.025)', transition: 'background 0.15s' }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLTableRowElement).style.background = 'rgba(0,191,255,0.04)' }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.background = 'transparent' }}>
-                        <td style={{ padding: '5px 5px', color: '#00bfff', fontWeight: '700', fontFamily: 'monospace', fontSize: '9px' }}>{r.id}</td>
-                        <td style={{ padding: '5px 5px', color: 'rgba(200,225,255,0.82)' }}>{r.domain}</td>
-                        <td style={{ padding: '5px 5px', color: 'rgba(170,205,250,0.7)' }}>{r.eng}</td>
-                        <td style={{ padding: '5px 5px', fontFamily: 'monospace', fontWeight: '800', fontSize: '9px', color: r.status === 'breach' ? C.red : r.status === 'risk' ? C.yellow : C.green }}>{r.time}</td>
-                        <td style={{ padding: '5px 5px' }}><Badge status={r.status} /></td>
+              <div className="card">
+                <div className="ch"><div className="ct">Recent CRQ Activity</div><button className="btn btn-s" onClick={() => go('crqs')}>View all →</button></div>
+                <div className="tw">
+                  <table>
+                    <thead><tr><th>CRQ</th><th>Activity</th><th>Domain</th><th>Stage</th><th>SLA</th><th>Action</th></tr></thead>
+                    <tbody>
+                      <tr onClick={() => go('crqs')}>
+                        <td><span style={{fontFamily:"'DM Mono'",fontSize:'11px',fontWeight:500,color:'var(--ac)'}}>CRQ-001</span></td>
+                        <td>Link Upgrade</td><td><span className="bg bg-bl">IP Core</span></td><td><span className="bg bg-pu">CAB Approval</span></td>
+                        <td><div className="sla"><div className="slabg"><div className="slaf s-gr" style={{width:'72%'}}></div></div><span className="slap" style={{color:'var(--gr)'}}>72%</span></div></td>
+                        <td><button className="btn btn-ok" onClick={e => { e.stopPropagation(); openModal('m-approve') }}>Approve</button></td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                      <tr onClick={() => go('crqs')}>
+                        <td><span style={{fontFamily:"'DM Mono'",fontSize:'11px',fontWeight:500,color:'var(--ac)'}}>CMC-031</span></td>
+                        <td>GPON Config</td><td><span className="bg bg-te">PVoIcc</span></td><td><span className="bg bg-am">Stakeholder</span></td>
+                        <td><div className="sla"><div className="slabg"><div className="slaf s-am" style={{width:'45%'}}></div></div><span className="slap" style={{color:'var(--am)'}}>45%</span></div></td>
+                        <td><button className="btn btn-no" onClick={e => { e.stopPropagation(); openModal('m-reject') }}>Reject</button></td>
+                      </tr>
+                      <tr onClick={() => go('crqs')}>
+                        <td><span style={{fontFamily:"'DM Mono'",fontSize:'11px',fontWeight:500,color:'var(--re)'}}>CMP-023</span></td>
+                        <td>BGP Change</td><td><span className="bg bg-bl">IP Core</span></td><td><span className="bg bg-te">MOP Validation</span></td>
+                        <td><div className="sla"><div className="slabg"><div className="slaf s-re" style={{width:'85%'}}></div></div><span className="slap" style={{color:'var(--re)'}}>85%</span></div></td>
+                        <td><button className="btn btn-warn">Critical</button></td>
+                      </tr>
+                      <tr onClick={() => go('crqs')}>
+                        <td><span style={{fontFamily:"'DM Mono'",fontSize:'11px',fontWeight:500,color:'var(--ac)'}}>CMC-003</span></td>
+                        <td>BLJ Chang</td><td><span className="bg bg-gy">Packet</span></td><td><span className="bg bg-te">Authorization</span></td>
+                        <td><div className="sla"><div className="slabg"><div className="slaf s-gr" style={{width:'72%'}}></div></div><span className="slap" style={{color:'var(--gr)'}}>72%</span></div></td>
+                        <td><button className="btn btn-ok" onClick={e => { e.stopPropagation(); openModal('m-approve') }}>Approve</button></td>
+                      </tr>
+                      <tr onClick={() => go('crqs')}>
+                        <td><span style={{fontFamily:"'DM Mono'",fontSize:'11px',fontWeight:500,color:'var(--ac)'}}>CRQ-002</span></td>
+                        <td>MPLS Reroute</td><td><span className="bg bg-pu">Optics</span></td><td><span className="bg bg-am">Stakeholder</span></td>
+                        <td><div className="sla"><div className="slabg"><div className="slaf s-am" style={{width:'38%'}}></div></div><span className="slap" style={{color:'var(--am)'}}>38%</span></div></td>
+                        <td><button className="btn btn-ok" onClick={e => { e.stopPropagation(); openModal('m-approve') }}>Approve</button></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
+          </div>
 
-            {/* SLA Breach Risk Table */}
-            <div style={glass({ padding: '14px', cursor: 'pointer' })} onClick={() => openModal('SLA Breach Risk — All CRQs', filtered)}>
-              <SectionTitle color={C.red}>🔥 SLA BREACH RISK</SectionTitle>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid rgba(255,51,102,0.1)' }}>
-                    {['Domain', 'Healthy', 'At Risk', 'Breached'].map(h => (
-                      <th key={h} style={{ padding: '4px 6px', textAlign: h === 'Domain' ? 'left' : 'right', color: 'rgba(110,160,215,0.5)', fontSize: '9px', letterSpacing: '0.05em', fontWeight: '700' }}>{h}</th>
+          {/* ═══ ALL CRQs — SPLIT PANEL ═══ */}
+          <div className={`page${activePage === 'crqs' ? ' on' : ''}`}>
+            <div style={{padding:'10px 14px 0',display:'flex',alignItems:'center',gap:'8px',flexShrink:0,background:'var(--wh)',borderBottom:'1px solid var(--bd)'}}>
+              <select value={fStage} onChange={e => setFStage(e.target.value)} style={{fontSize:'12px',padding:'5px 9px',border:'1px solid var(--bd)',borderRadius:'7px',background:'var(--wh)',fontFamily:'inherit',marginBottom:'10px'}}>
+                <option value="">All Stages</option>
+                <option value="Authorization">Authorization</option>
+                <option value="CAB Approval">CAB Approval</option>
+                <option value="Stakeholder">Stakeholder</option>
+                <option value="MOP Validation">MOP Validation</option>
+              </select>
+              <select value={fDomain} onChange={e => setFDomain(e.target.value)} style={{fontSize:'12px',padding:'5px 9px',border:'1px solid var(--bd)',borderRadius:'7px',background:'var(--wh)',fontFamily:'inherit',marginBottom:'10px'}}>
+                <option value="">All Domains</option>
+                <option value="IP Core">IP Core</option>
+                <option value="Optics">Optics</option>
+                <option value="Packet">Packet</option>
+                <option value="Embedded">Embedded</option>
+              </select>
+              <select value={fSla} onChange={e => setFSla(e.target.value)} style={{fontSize:'12px',padding:'5px 9px',border:'1px solid var(--bd)',borderRadius:'7px',background:'var(--wh)',fontFamily:'inherit',marginBottom:'10px'}}>
+                <option value="">All SLA</option>
+                <option value="critical">Critical (&gt;80%)</option>
+                <option value="warn">Warning (50-80%)</option>
+                <option value="ok">On Track (&lt;50%)</option>
+              </select>
+              <div style={{marginLeft:'auto',fontSize:'11px',color:'var(--tx3)',marginBottom:'10px'}}>{filteredCrqs.length} CRQs</div>
+            </div>
+            <div className="split">
+              <div className="split-list">
+                <div className="crq-list-header">
+                  <input type="text" placeholder="Search CRQ ID, activity, hostname..." value={crqSearch} onChange={e => setCrqSearch(e.target.value)} />
+                </div>
+                <div className="crq-list-scr" ref={crqListRef}></div>
+              </div>
+              <div className="split-detail" ref={crqDetailRef}></div>
+            </div>
+          </div>
+
+          {/* ═══ MY APPROVALS — SPLIT PANEL ═══ */}
+          <div className={`page${activePage === 'myapprovals' ? ' on' : ''}`}>
+            <div className="split">
+              <div className="split-list">
+                <div className="crq-list-header">
+                  <input type="text" placeholder="Search pending approvals..." />
+                  <span className="bg bg-re" style={{flexShrink:0}}>8 pending</span>
+                </div>
+                <div className="crq-list-scr" ref={approvalListRef}></div>
+              </div>
+              <div className="split-detail" ref={approvalDetailRef}></div>
+            </div>
+          </div>
+
+          {/* ═══ CAB SESSIONS ═══ */}
+          <div className={`page${activePage === 'cabsessions' ? ' on' : ''}`}>
+            <div className="mx">
+              <div className="mc bl"><div className="mc-lbl">Active CRQs</div><div className="mc-v">12</div><div className="mc-s">In sessions</div></div>
+              <div className="mc am"><div className="mc-lbl">Delegated</div><div className="mc-v">3</div><div className="mc-s">Pending CTO/COH</div></div>
+              <div className="mc re"><div className="mc-lbl">Escalated</div><div className="mc-v">2</div><div className="mc-s">L2 escalation</div></div>
+              <div className="mc re"><div className="mc-lbl">Rejected</div><div className="mc-v">5</div><div className="mc-s">This cycle</div></div>
+            </div>
+            <div className="tabs" style={{background:'var(--wh)',borderBottom:'1px solid var(--bd)'}}>
+              <div className={`tab${cabTab === 'cab-my' ? ' on' : ''}`} onClick={() => setCabTab('cab-my')}>My Sessions</div>
+              <div className={`tab${cabTab === 'cab-all' ? ' on' : ''}`} onClick={() => setCabTab('cab-all')}>All Sessions</div>
+            </div>
+            <div className="scrollable">
+              <div style={{display: cabTab === 'cab-my' ? '' : 'none'}}>
+                <div className="alert a-info" style={{marginTop:'4px'}}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{flexShrink:0,marginTop:'1px'}}><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  MS Teams invite sent for CAB-031 at 10:00 AM. Join button activates at meeting time.
+                </div>
+                <div className="card" style={{marginBottom:'14px'}}>
+                  <div style={{padding:'14px 16px',borderBottom:'1px solid var(--bd2)'}}>
+                    <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'12px'}}>
+                      <div>
+                        <div style={{fontSize:'14px',fontWeight:600,marginBottom:'3px'}}>CAB Session — CAB-031</div>
+                        <div style={{display:'flex',gap:'8px',flexWrap:'wrap',fontSize:'12px',color:'var(--tx2)'}}>
+                          <span>Mar 26, 2026 · 10:00 AM</span><span>·</span><span className="bg bg-pu">CAB Approval</span>
+                        </div>
+                      </div>
+                      <div style={{display:'flex',gap:'6px',flexShrink:0}}>
+                        <button className="btn btn-p" onClick={() => openModal('m-cab-session')}>Join Session</button>
+                        <button className="btn btn-s">···</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{padding:'0'}}>
+                    <div style={{padding:'9px 16px',background:'var(--bd2)',fontSize:'11px',fontWeight:600,color:'var(--tx2)',textTransform:'uppercase',letterSpacing:'.05em',display:'flex',gap:'12px'}}>
+                      <span style={{width:'90px'}}>CRQ ID</span><span style={{flex:1}}>Activity</span><span style={{width:'80px'}}>Domain</span><span style={{width:'70px'}}>SLA</span><span style={{width:'90px'}}>Status</span>
+                    </div>
+                    {[
+                      {id:'CRQ-001',act:'Link Upgrade (MPLS)',dom:'IP Core',domCls:'bg-bl',sla:85,slaCls:'s-re',slaColor:'var(--re)'},
+                      {id:'CMC-031',act:'GPON Config',dom:'PVoIcc',domCls:'bg-te',sla:45,slaCls:'s-am',slaColor:'var(--am)'},
+                      {id:'CMP-023',act:'BGP Change',dom:'IP Core',domCls:'bg-bl',sla:60,slaCls:'s-gr',slaColor:'var(--gr)'},
+                    ].map((row, i, arr) => (
+                      <div key={row.id} style={{padding:'10px 16px',borderBottom: i < arr.length-1 ? '1px solid var(--bd2)' : 'none',display:'flex',alignItems:'center',gap:'12px',fontSize:'13px',cursor:'pointer'}} onClick={() => openModal('m-cab-session')}>
+                        <span style={{width:'90px',fontFamily:"'DM Mono'",fontSize:'12px',fontWeight:500,color:'var(--ac)'}}>{row.id}</span>
+                        <span style={{flex:1}}>{row.act}</span>
+                        <span style={{width:'80px'}}><span className={`bg ${row.domCls}`}>{row.dom}</span></span>
+                        <span style={{width:'70px'}}><div className="sla"><div className="slabg"><div className={`slaf ${row.slaCls}`} style={{width:`${row.sla}%`}}></div></div><span className="slap" style={{color:row.slaColor,fontSize:'10px'}}>{row.sla}%</span></div></span>
+                        <span style={{width:'90px'}}><span className="bg bg-am">In Review</span></span>
+                      </div>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {breachRisk.map((r, i) => (
-                    <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.025)' }}>
-                      <td style={{ padding: '5px 6px', color: 'rgba(200,225,255,0.82)' }}>{r.domain}</td>
-                      <td style={{ padding: '5px 6px', textAlign: 'right', color: C.green, fontWeight: '700' }}>{r.healthy}</td>
-                      <td style={{ padding: '5px 6px', textAlign: 'right', color: C.yellow, fontWeight: '700' }}>{r.risk}</td>
-                      <td style={{ padding: '5px 6px', textAlign: 'right', color: C.red, fontWeight: '700' }}>{r.breach}</td>
-                    </tr>
+                  </div>
+                  <div style={{padding:'12px 16px',background:'var(--bd2)',borderTop:'1px solid var(--bd2)',display:'flex',alignItems:'center',gap:'14px'}}>
+                    <div style={{fontSize:'12px',color:'var(--tx2)'}}>Quorum: <b>2/5</b> votes · Mandatory: <b>1/2</b></div>
+                    <div style={{flex:1}}><div className="qbar"><div className="qfill" style={{width:'40%'}}></div></div></div>
+                    <span className="bg bg-am">Waiting for Quorum</span>
+                  </div>
+                </div>
+                <div className="card" style={{opacity:.72,marginBottom:'14px'}}>
+                  <div style={{padding:'14px 16px',borderBottom:'1px solid var(--bd2)'}}>
+                    <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between'}}>
+                      <div>
+                        <div style={{fontSize:'14px',fontWeight:600,marginBottom:'3px'}}>CAB Session — CAB-030</div>
+                        <div style={{fontSize:'12px',color:'var(--tx2)'}}>Mar 25, 2026 · 2:00 PM · <span className="bg bg-gr" style={{fontSize:'10px'}}>Completed</span></div>
+                      </div>
+                      <button className="btn btn-s">View Details</button>
+                    </div>
+                  </div>
+                  <div style={{padding:'9px 16px',background:'var(--bd2)',fontSize:'11px',fontWeight:600,color:'var(--tx2)',textTransform:'uppercase',letterSpacing:'.05em',display:'flex',gap:'12px'}}>
+                    <span style={{width:'90px'}}>CRQ ID</span><span style={{flex:1}}>Activity</span><span style={{width:'80px'}}>Domain</span><span style={{width:'100px'}}>Decision</span>
+                  </div>
+                  {[{id:'CRQ-005',act:'Router Upgrade',dom:'Embedded',domCls:'bg-pu'},{id:'CRQ-006',act:'MPLS Reroute',dom:'IP Core',domCls:'bg-bl'}].map((row,i,arr) => (
+                    <div key={row.id} style={{padding:'10px 16px',borderBottom:i<arr.length-1?'1px solid var(--bd2)':'none',display:'flex',alignItems:'center',gap:'12px',fontSize:'13px'}}>
+                      <span style={{width:'90px',fontFamily:"'DM Mono'",fontSize:'12px',color:'var(--tx2)'}}>{row.id}</span>
+                      <span style={{flex:1}}>{row.act}</span>
+                      <span style={{width:'80px'}}><span className={`bg ${row.domCls}`}>{row.dom}</span></span>
+                      <span style={{width:'100px'}}><span className="bg bg-gr">Approved</span></span>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-              <div style={{ display: 'flex', gap: '8px', marginTop: '10px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
-                {[
-                  { label: 'Total Healthy', val: breachRisk.reduce((a, r) => a + r.healthy, 0), color: C.green },
-                  { label: 'At Risk', val: breachRisk.reduce((a, r) => a + r.risk, 0), color: C.yellow },
-                  { label: 'Breached', val: breachRisk.reduce((a, r) => a + r.breach, 0), color: C.red },
-                ].map((s, i) => (
-                  <div key={i} style={{ flex: 1, textAlign: 'center' }}>
-                    <div style={{ fontSize: '16px', fontWeight: '800', ...neon(s.color) }}>{s.val}</div>
-                    <div style={{ fontSize: '8px', color: 'rgba(130,175,230,0.45)', letterSpacing: '0.05em' }}>{s.label}</div>
-                  </div>
-                ))}
+                </div>
               </div>
-            </div>
-
-            {/* Domain SLA Performance */}
-            <div style={glass({ padding: '14px', cursor: 'pointer' })} onClick={() => openModal('Domain SLA Performance', filtered)}>
-              <SectionTitle color={C.green}>📊 DOMAIN SLA PERFORMANCE</SectionTitle>
-              {domainSLA.map((d, i) => (
-                <div key={i} style={{ marginBottom: '9px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                    <span style={{ fontSize: '10px', color: 'rgba(200,225,255,0.8)' }}>{d.domain}</span>
-                    <span style={{ fontSize: '10px', fontWeight: '800', color: d.color }}>{d.pct}%</span>
-                  </div>
-                  <div style={{ height: '5px', background: 'rgba(255,255,255,0.06)', borderRadius: '3px', overflow: 'hidden', position: 'relative' }}>
-                    <div style={{
-                      height: '100%', width: `${d.pct}%`, background: `linear-gradient(90deg,${d.color}66,${d.color})`,
-                      borderRadius: '3px', boxShadow: `0 0 8px ${d.color}55`, transition: 'width 1.2s cubic-bezier(0.4,0,0.2,1)',
-                    }} />
+              <div style={{display: cabTab === 'cab-all' ? '' : 'none'}}>
+                <div className="card">
+                  <div className="tw">
+                    <table>
+                      <thead><tr><th>Session ID</th><th>Scheduled</th><th>CRQs</th><th>Quorum</th><th>Status</th><th>Decision</th><th>Action</th></tr></thead>
+                      <tbody>
+                        <tr><td style={{fontFamily:"'DM Mono'",fontSize:'11px'}}>CAB-031</td><td>Mar 26 10:00 AM</td><td>3</td><td>2/5</td><td><span className="bg bg-am">In Progress</span></td><td><span className="bg bg-gy">Pending</span></td><td><button className="btn btn-p btn-s" onClick={() => openModal('m-cab-session')}>Join</button></td></tr>
+                        <tr><td style={{fontFamily:"'DM Mono'",fontSize:'11px'}}>CAB-030</td><td>Mar 25 2:00 PM</td><td>2</td><td>5/5</td><td><span className="bg bg-gr">Completed</span></td><td><span className="bg bg-gr">Approved</span></td><td><button className="btn btn-s">View</button></td></tr>
+                        <tr><td style={{fontFamily:"'DM Mono'",fontSize:'11px'}}>CAB-029</td><td>Mar 24 11:00 AM</td><td>4</td><td>4/5</td><td><span className="bg bg-gr">Completed</span></td><td><span className="bg bg-re">Rejected</span></td><td><button className="btn btn-s">View</button></td></tr>
+                        <tr><td style={{fontFamily:"'DM Mono'",fontSize:'11px'}}>CAB-028</td><td>Mar 22 9:00 AM</td><td>1</td><td>5/5</td><td><span className="bg bg-gr">Completed</span></td><td><span className="bg bg-am">Deferred</span></td><td><button className="btn btn-s">View</button></td></tr>
+                      </tbody>
+                    </table>
                   </div>
                 </div>
-              ))}
+              </div>
             </div>
           </div>
 
-          {/* ── CENTER PANEL ── */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-
-            {/* Ticket Aging Stacked Bar */}
-            {mounted && (
-              <div style={glass({ padding: '14px', cursor: 'pointer' })} onClick={() => openModal('Ticket Aging Distribution', filtered)}>
-                <SectionTitle color={C.blue}>📈 TICKET AGING DISTRIBUTION</SectionTitle>
-                <div style={{ height: '148px' }}>
-                  <Bar data={TICKET_AGING_DATA} options={stackedYOpts} />
-                </div>
+          {/* ═══ CAB PLANNING ═══ */}
+          <div className={`page${activePage === 'cabplanning' ? ' on' : ''}`}>
+            <div className="scrollable">
+              <div className="alert a-warn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{flexShrink:0,marginTop:'1px'}}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                5 CRQs are ready for CAB session planning. All have completed Authorization, Impact Validation, and MOP approval.
               </div>
-            )}
-
-            {/* CRQ Aging Funnel */}
-            {mounted && (
-              <div style={glass({ padding: '14px', cursor: 'pointer' })} onClick={() => openModal('CRQ Aging Flow', filtered)}>
-                <SectionTitle color={C.yellow}>⚗ CRQ AGING FLOW — STAGE DISTRIBUTION</SectionTitle>
-                <div style={{ height: '148px' }}>
-                  <Bar data={AGING_FUNNEL_DATA} options={stackedXOpts} />
+              <div className="card">
+                <div className="ch"><div className="ct">Waiting Queue — Ready for CAB</div><button className="btn btn-p" onClick={() => openModal('m-plan-session')}>Plan CAB Session</button></div>
+                <div className="tw">
+                  <table>
+                    <thead><tr><th><input type="checkbox" style={{width:'13px',padding:'0'}} /></th><th>CRQ ID</th><th>Activity</th><th>Domain</th><th>Circle</th><th>Impact</th><th>Scheduled</th><th>Status</th></tr></thead>
+                    <tbody>
+                      {[
+                        {id:'CRQ-001',act:'Link Upgrade',dom:'IP Core',domCls:'bg-bl',circle:'GJ',impact:'SA',sched:'Mar 26',status:'Active'},
+                        {id:'CRQ-002',act:'GPON Config',dom:'Optics',domCls:'bg-te',circle:'MH',impact:'NSA',sched:'Mar 27',status:'NSA Hold'},
+                        {id:'CRQ-003',act:'BGP Change',dom:'Packet',domCls:'bg-gy',circle:'DL',impact:'SA',sched:'Mar 28',status:'Active'},
+                        {id:'CRQ-004',act:'Router Upgrade',dom:'Embedded',domCls:'bg-pu',circle:'RJ',impact:'NSA',sched:'Mar 29',status:'Active'},
+                        {id:'CRQ-005',act:'MPLS Reroute',dom:'IP Core',domCls:'bg-bl',circle:'KA',impact:'SA',sched:'Mar 30',status:'Active'},
+                      ].map(row => (
+                        <tr key={row.id}>
+                          <td><input type="checkbox" style={{width:'13px',padding:'0'}} /></td>
+                          <td style={{fontFamily:"'DM Mono'",fontSize:'11px',color:'var(--ac)'}}>{row.id}</td>
+                          <td>{row.act}</td>
+                          <td><span className={`bg ${row.domCls}`}>{row.dom}</span></td>
+                          <td>{row.circle}</td>
+                          <td><span className={`bg ${row.impact === 'SA' ? 'bg-re' : 'bg-gy'}`}>{row.impact}</span></td>
+                          <td>{row.sched}</td>
+                          <td><span className={`bg ${row.status === 'Active' ? 'bg-gr' : 'bg-am'}`}>{row.status}</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              </div>
-            )}
-
-            {/* Bottleneck Detection */}
-            <div style={glass({ padding: '14px', cursor: 'pointer' })} onClick={() => openModal('Bottleneck Detection — Pending CRQs', filtered.filter(c => c.status === 'Open'))}>
-              <SectionTitle color={C.orange}>🔍 BOTTLENECK DETECTION</SectionTitle>
-              {BOTTLENECKS.map((b, i) => (
-                <div key={i} style={{ marginBottom: '10px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', alignItems: 'center' }}>
-                    <span style={{ fontSize: '10px', color: 'rgba(200,225,255,0.8)' }}>{b.name}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      {b.val > 70 && <span style={{ fontSize: '8px', color: C.red, fontWeight: '700', letterSpacing: '0.06em' }}>HIGH</span>}
-                      {b.val > 50 && b.val <= 70 && <span style={{ fontSize: '8px', color: C.yellow, fontWeight: '700', letterSpacing: '0.06em' }}>MED</span>}
-                      <span style={{ fontSize: '10px', fontWeight: '800', color: b.val > 70 ? C.red : b.val > 50 ? C.yellow : C.green }}>{b.val}%</span>
-                    </div>
-                  </div>
-                  <div style={{ height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
-                    <div style={{
-                      height: '100%', width: `${b.val}%`, background: `linear-gradient(90deg,${b.color}66,${b.color})`,
-                      borderRadius: '4px', boxShadow: `0 0 10px ${b.color}45`, transition: 'width 1.2s cubic-bezier(0.4,0,0.2,1)',
-                    }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* SE Workload Radar */}
-            {mounted && (
-              <div style={glass({ padding: '14px', cursor: 'pointer' })} onClick={() => openModal('SE / CCB Workload Analysis', filtered)}>
-                <SectionTitle color={C.purple}>🎯 SE WORKLOAD — DOMAIN COVERAGE RADAR</SectionTitle>
-                <div style={{ height: '210px' }}>
-                  <Radar data={radarData} options={{
-                    responsive: true, maintainAspectRatio: false, animation: { duration: 800 },
-                    plugins: { legend: { labels: { color: 'rgba(180,210,255,0.78)', font: { size: 9, family: 'Inter' }, boxWidth: 10, padding: 10 }, position: 'top' as const } },
-                    scales: { r: { min: 0, ticks: { color: 'rgba(120,160,210,0.45)', font: { size: 8 }, backdropColor: 'transparent', stepSize: 25 }, grid: { color: 'rgba(255,255,255,0.07)' }, angleLines: { color: 'rgba(255,255,255,0.09)' }, pointLabels: { color: 'rgba(180,210,255,0.72)', font: { size: 9 } } } },
-                  }} />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* ── RIGHT PANEL ── */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-
-            {/* Critical Alerts */}
-            <div style={{ ...glass({ padding: '14px', cursor: 'pointer' }), borderColor: 'rgba(255,51,102,0.14)' }} onClick={() => openModal('Critical Alerts — Breached/At-Risk CRQs', filtered.filter(c => c.aging > 4))}>
-              <SectionTitle color={C.red}>⚠ CRITICAL ALERTS</SectionTitle>
-              {ALERTS.map((a, i) => (
-                <div key={i} style={{
-                  marginBottom: '6px', padding: '7px 9px', borderRadius: '8px',
-                  background: a.level === 'critical' ? 'rgba(255,51,102,0.07)' : a.level === 'warning' ? 'rgba(255,215,0,0.055)' : 'rgba(0,191,255,0.045)',
-                  border: `1px solid ${a.level === 'critical' ? 'rgba(255,51,102,0.18)' : a.level === 'warning' ? 'rgba(255,215,0,0.13)' : 'rgba(0,191,255,0.1)'}`,
-                  transition: 'transform 0.15s', cursor: 'pointer',
-                }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateX(3px)' }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateX(0)' }}>
-                  <div style={{ display: 'flex', gap: '6px', alignItems: 'flex-start' }}>
-                    <span style={{ fontSize: '11px', flexShrink: 0, lineHeight: '14px' }}>
-                      {a.level === 'critical' ? '🔴' : a.level === 'warning' ? '🟡' : '🔵'}
-                    </span>
-                    <div>
-                      <div style={{ fontSize: '9.5px', color: 'rgba(200,225,255,0.85)', lineHeight: '1.45', marginBottom: '2px' }}>{a.msg}</div>
-                      <div style={{ fontSize: '8px', color: 'rgba(100,145,205,0.45)', fontFamily: 'monospace' }}>{a.t} UTC</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Live Incident Feed */}
-            <div style={{ ...glass({ padding: '14px' }), flex: 1 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <SectionTitle color={C.cyan}>📡 LIVE INCIDENT FEED</SectionTitle>
-                <span style={{
-                  background: 'rgba(0,255,136,0.12)', color: '#00ff88', padding: '2px 8px', borderRadius: '10px',
-                  fontSize: '8px', fontWeight: '800', border: '1px solid rgba(0,255,136,0.22)', letterSpacing: '0.1em',
-                  animation: 'pulse 1.8s ease-in-out infinite',
-                }}>● LIVE</span>
-              </div>
-              <div ref={feedRef} style={{ height: '400px', overflowY: 'scroll', scrollbarWidth: 'none' }}>
-                {[...FEED, ...FEED].map((f, i) => (
-                  <div key={i} onClick={() => openModal('Live Incident Feed — All CRQs', filtered)} style={{
-                    padding: '5px 7px', marginBottom: '3px', borderRadius: '5px', fontSize: '9.5px', cursor: 'pointer',
-                    background: f.type === 'error' ? 'rgba(255,51,102,0.07)' : f.type === 'success' ? 'rgba(0,255,136,0.055)' : f.type === 'warning' ? 'rgba(255,215,0,0.055)' : 'rgba(0,191,255,0.04)',
-                    borderLeft: `2px solid ${f.type === 'error' ? C.red : f.type === 'success' ? C.green : f.type === 'warning' ? C.yellow : C.blue}`,
-                    lineHeight: '1.35',
-                  }}>
-                    <span style={{ color: 'rgba(90,135,200,0.55)', fontFamily: 'monospace', marginRight: '5px', fontSize: '8.5px' }}>{f.t}</span>
-                    <span style={{ color: f.type === 'error' ? '#ff9999' : f.type === 'success' ? '#88ffcc' : f.type === 'warning' ? '#ffdd88' : 'rgba(190,220,255,0.82)' }}>{f.msg}</span>
-                  </div>
-                ))}
               </div>
             </div>
           </div>
-        </div>
 
-        {/* ═══ BOTTOM SECTION — 4 columns ═══ */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
-
-          {/* Stage Distribution */}
-          {mounted && (
-            <div style={glass({ padding: '14px', cursor: 'pointer' })} onClick={() => openModal('Stage Distribution', filtered)}>
-              <SectionTitle color={C.blue}>📋 STAGE DISTRIBUTION</SectionTitle>
-              <div style={{ height: '205px' }}>
-                <Bar data={stageDist} options={{
-                  ...baseChartOpts(), indexAxis: 'y' as const,
-                  plugins: { legend: { display: false }, tooltip: {} },
-                  scales: {
-                    x: { ticks: { color: 'rgba(180,210,255,0.6)', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
-                    y: { ticks: { color: 'rgba(180,210,255,0.75)', font: { size: 9 } }, grid: { display: false } },
-                  },
-                }} />
+          {/* ═══ ANALYTICS ═══ */}
+          <div className={`page${activePage === 'analytics' ? ' on' : ''}`}>
+            <div className="mx">
+              <div className="mc bl"><div className="mc-lbl">Total CRQs (Month)</div><div className="mc-v">127</div><div className="mc-s">↑ 14% vs last month</div></div>
+              <div className="mc te"><div className="mc-lbl">Avg Approval TAT</div><div className="mc-v">14h</div><div className="mc-s">↓ 2h improvement</div></div>
+              <div className="mc am"><div className="mc-lbl">SLA Compliance</div><div className="mc-v">87%</div><div className="mc-s">Target: 95%</div></div>
+              <div className="mc re"><div className="mc-lbl">Rejection Rate</div><div className="mc-v">12%</div><div className="mc-s">↑ 3% increase</div></div>
+            </div>
+            <div className="scrollable">
+              <div className="g2" style={{marginBottom:'14px'}}>
+                <div className="card">
+                  <div className="ch"><div className="ct">SLA Indicator System</div></div>
+                  <div className="cb" style={{display:'flex',flexDirection:'column',gap:'12px'}}>
+                    {[
+                      {color:'#16a34a',label:'Green — On Track',sub:'More than 50% time remaining',cls:'s-gr',w:'70%'},
+                      {color:'#d97706',label:'Amber — Monitor',sub:'Less than 50% remaining',cls:'s-am',w:'40%'},
+                      {color:'#dc2626',label:'Red — Near Breach',sub:'Critical threshold exceeded',cls:'s-re',w:'85%'},
+                      {color:'#9ca3af',label:'Breached — Auto-escalated',sub:'SLA crossed · L1→L2→L3 escalation',cls:'s-br',w:'100%'},
+                    ].map(row => (
+                      <div key={row.label} style={{display:'flex',alignItems:'center',gap:'12px'}}>
+                        <div style={{width:'10px',height:'10px',borderRadius:'50%',background:row.color,flexShrink:0}}></div>
+                        <div style={{flex:1}}><div style={{fontSize:'12px',fontWeight:500}}>{row.label}</div><div style={{fontSize:'11px',color:'var(--tx2)'}}>{row.sub}</div></div>
+                        <div className="slabg" style={{width:'72px'}}><div className={`slaf ${row.cls}`} style={{width:row.w}}></div></div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="card">
+                  <div className="ch"><div className="ct">CRQ Volume by Domain</div></div>
+                  <div className="cb" style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+                    {[
+                      {label:'IP Core',val:38,color:'#2563eb',w:'80%'},
+                      {label:'Embedded',val:31,color:'#7c3aed',w:'65%'},
+                      {label:'Optics',val:29,color:'#0d9488',w:'61%'},
+                      {label:'Packet',val:29,color:'#d97706',w:'61%'},
+                    ].map(row => (
+                      <div key={row.label}>
+                        <div style={{display:'flex',justifyContent:'space-between',fontSize:'12px',marginBottom:'3px'}}><span>{row.label}</span><span style={{fontWeight:600}}>{row.val}</span></div>
+                        <div style={{background:'#e5e7eb',borderRadius:'3px',height:'8px'}}><div style={{background:row.color,width:row.w,height:'100%',borderRadius:'3px'}}></div></div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
-          )}
-
-          {/* Lifecycle Time Analysis */}
-          <div style={glass({ padding: '14px', cursor: 'pointer' })} onClick={() => openModal('Lifecycle Time Analysis', filtered)}>
-            <SectionTitle color={C.yellow}>⏳ LIFECYCLE TIME ANALYSIS</SectionTitle>
-            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-around', gap: '6px', paddingTop: '4px' }}>
-              {lifecycleGauges.map((l, i) => (
-                <SemiGauge key={i} val={l.val} color={l.color} label={l.label} />
-              ))}
-            </div>
-            <div style={{ marginTop: '8px', padding: '7px 10px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', textAlign: 'center' }}>
-              <span style={{ fontSize: '9px', color: 'rgba(130,175,230,0.5)' }}>Avg SLA Achievement: </span>
-              <span style={{ fontSize: '12px', fontWeight: '800', ...neon(C.cyan) }}>
-                {filtered.length > 0 ? Math.round((filtered.filter(c => c.aging <= 8).length / filtered.length) * 1000) / 10 : 0}%
-              </span>
             </div>
           </div>
 
-          {/* CRQ Aging Heatmap */}
-          <div style={glass({ padding: '14px' })}>
-            <SectionTitle color={C.green}>🗓 CRQ AGING HEATMAP</SectionTitle>
-            <div style={{ fontSize: '8.5px', color: 'rgba(110,155,210,0.45)', marginBottom: '7px', marginTop: '-6px' }}>Aging count by domain × weekday</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '58px repeat(7, 1fr)', gap: '2px', marginBottom: '2px' }}>
-              <div />
-              {HM_DAYS.map(d => (
-                <div key={d} style={{ fontSize: '8px', textAlign: 'center', color: 'rgba(140,185,240,0.48)', fontWeight: '700', letterSpacing: '0.04em' }}>{d}</div>
+          {/* ═══ ADMIN ═══ */}
+          <div className={`page${activePage === 'admin' ? ' on' : ''}`}>
+            <div className="tabs" style={{background:'var(--wh)',borderBottom:'1px solid var(--bd)',padding:'0 16px'}}>
+              {[
+                {id:'adm-approvers',label:'Approver Config'},
+                {id:'adm-sla',label:'SLA Config'},
+                {id:'adm-rejection',label:'Rejection Reasons'},
+                {id:'adm-escalation',label:'Escalation Matrix'},
+                {id:'adm-users',label:'Users & Roles'},
+              ].map(t => (
+                <div key={t.id} className={`tab${admTab === t.id ? ' on' : ''}`} onClick={() => setAdmTab(t.id)}>{t.label}</div>
               ))}
             </div>
-            {HM_VALUES.map((row, ri) => (
-              <div key={ri} style={{ display: 'grid', gridTemplateColumns: '58px repeat(7, 1fr)', gap: '2px', marginBottom: '2px' }}>
-                <div style={{ fontSize: '8.5px', color: 'rgba(175,210,255,0.6)', display: 'flex', alignItems: 'center', paddingRight: '3px', fontWeight: '500' }}>{HM_DOMAINS[ri]}</div>
-                {row.map((val, ci) => <HeatCell key={ci} val={val} onClick={() => openModal(`Heatmap: ${HM_DOMAINS[ri]} — ${HM_DAYS[ci]}`, filtered.filter(c => c.domain.includes(HM_DOMAINS[ri].replace('Svc Opt', 'Service'))))} />)}
+            <div className="scrollable">
+              {/* Approver Config */}
+              <div style={{display: admTab === 'adm-approvers' ? '' : 'none'}}>
+                <div className="card" style={{marginBottom:'14px'}}>
+                  <div className="ch"><div className="ct">Approver Master Configuration</div><div style={{display:'flex',gap:'8px'}}><select style={{fontSize:'12px',padding:'5px 9px',border:'1px solid var(--bd)',borderRadius:'7px',fontFamily:'inherit'}}><option>All Roles</option><option>CTO</option><option>COH</option><option>Manager</option></select><button className="btn btn-p" onClick={() => openModal('m-add-approver')}>+ Add Approver</button></div></div>
+                  <div className="tw">
+                    <table>
+                      <thead><tr><th>Name</th><th>OLM ID</th><th>Role</th><th>Approval Levels</th><th>Domains</th><th>Circles</th><th>Delegation</th><th>Status</th><th></th></tr></thead>
+                      <tbody>
+                        {[
+                          {init:'AV',name:'Amit Verma',olm:'amver01',role:'CTO',roleCls:'bg-pu',level:'L4',domains:'All',circles:'All',deleg:true,active:true},
+                          {init:'PD',name:'Priya Deshmukh',olm:'prdesh02',role:'COH',roleCls:'bg-bl',level:'L4',domains:'Optics',circles:'MH, GJ',deleg:true,active:true},
+                          {init:'RS',name:'Rahul Sharma',olm:'sharra79',role:'Manager',roleCls:'bg-te',level:'L1, L2',domains:'Embedded',circles:'KA',deleg:false,active:true},
+                          {init:'SN',name:'Sheha Nair',olm:'nairsh04',role:'Engineer',roleCls:'bg-gy',level:'L1',domains:'WB',circles:'WB',deleg:false,active:false},
+                        ].map(row => (
+                          <tr key={row.olm}>
+                            <td><div style={{display:'flex',alignItems:'center',gap:'8px'}}><div style={{width:'26px',height:'26px',borderRadius:'50%',background:'var(--pu-s)',color:'var(--pu)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:600}}>{row.init}</div><span style={{fontWeight:500}}>{row.name}</span></div></td>
+                            <td style={{fontFamily:"'DM Mono'",fontSize:'11px'}}>{row.olm}</td>
+                            <td><span className={`bg ${row.roleCls}`}>{row.role}</span></td>
+                            <td><span className="bg bg-gy">{row.level}</span></td>
+                            <td>{row.domains}</td>
+                            <td>{row.circles}</td>
+                            <td><span className={`bg ${row.deleg ? 'bg-gr' : 'bg-am'}`}>{row.deleg ? 'Yes' : 'No'}</span></td>
+                            <td><span className={`bg ${row.active ? 'bg-gr' : 'bg-re'}`}>{row.active ? 'Active' : 'Inactive'}</span></td>
+                            <td><button className="btn btn-s">{row.active ? '···' : 'Activate'}</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div className="card">
+                  <div className="ch"><div className="ct">Approval Level Definitions</div></div>
+                  <div className="tw"><table>
+                    <thead><tr><th>Level</th><th>Typical Meaning</th><th>Roles Mapped</th><th>Default SLA</th><th>Configurable</th></tr></thead>
+                    <tbody>
+                      <tr><td><span className="bg bg-gy">L1</span></td><td>First-level operational approval</td><td>Engineer, NOC</td><td>8 hrs</td><td><span className="bg bg-gr">Yes</span></td></tr>
+                      <tr><td><span className="bg bg-bl">L2</span></td><td>Domain Lead / senior engineer</td><td>Domain SPOC, CAB</td><td>12 hrs</td><td><span className="bg bg-gr">Yes</span></td></tr>
+                      <tr><td><span className="bg bg-te">L3</span></td><td>Management / escalation</td><td>Manager</td><td>16 hrs</td><td><span className="bg bg-gr">Yes</span></td></tr>
+                      <tr><td><span className="bg bg-pu">L4</span></td><td>Top-level authority</td><td>CTO, COH</td><td>24 hrs</td><td><span className="bg bg-gr">Yes</span></td></tr>
+                    </tbody>
+                  </table></div>
+                  <div style={{padding:'10px 16px',borderTop:'1px solid var(--bd2)'}}><div className="alert a-info" style={{margin:'0',fontSize:'11px'}}>CTO/COH are configurable at any level. Hardcoding CTO = L4 is explicitly avoided in the system design.</div></div>
+                </div>
               </div>
-            ))}
-            <div style={{ display: 'flex', gap: '5px', marginTop: '9px', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ fontSize: '8px', color: 'rgba(130,175,230,0.4)' }}>Low</span>
-              {['rgba(0,255,136,0.45)', 'rgba(100,220,150,0.5)', 'rgba(255,215,0,0.55)', 'rgba(255,140,50,0.6)', 'rgba(255,51,102,0.65)'].map((bg, i) => (
-                <div key={i} style={{ width: '20px', height: '9px', background: bg, borderRadius: '2px' }} />
-              ))}
-              <span style={{ fontSize: '8px', color: 'rgba(130,175,230,0.4)' }}>High</span>
+              {/* SLA Config */}
+              <div style={{display: admTab === 'adm-sla' ? '' : 'none'}}>
+                <div className="card"><div className="ch"><div className="ct">SLA Configuration by Stage</div><button className="btn btn-p">+ Add Rule</button></div>
+                <div className="tw"><table><thead><tr><th>Stage</th><th>SLA Hours</th><th>Warning Threshold</th><th>Critical Threshold</th><th>Status</th><th>Action</th></tr></thead><tbody>
+                  <tr><td>Authorization Approval</td><td>24 hrs</td><td>50%</td><td>80%</td><td><span className="bg bg-gr">Active</span></td><td><button className="btn btn-s">Edit</button></td></tr>
+                  <tr><td>Stakeholder Approvals</td><td>12 hrs</td><td>50%</td><td>80%</td><td><span className="bg bg-gr">Active</span></td><td><button className="btn btn-s">Edit</button></td></tr>
+                  <tr><td>CAB Approval</td><td>48 hrs</td><td>40%</td><td>75%</td><td><span className="bg bg-gr">Active</span></td><td><button className="btn btn-s">Edit</button></td></tr>
+                  <tr><td>MOP Validation</td><td>8 hrs</td><td>50%</td><td>80%</td><td><span className="bg bg-gr">Active</span></td><td><button className="btn btn-s">Edit</button></td></tr>
+                </tbody></table></div></div>
+              </div>
+              {/* Rejection Reasons */}
+              <div style={{display: admTab === 'adm-rejection' ? '' : 'none'}}>
+                <div className="card"><div className="ch"><div className="ct">Rejection Reason Configuration</div><button className="btn btn-p">+ Add Reason</button></div>
+                <div className="tw"><table><thead><tr><th>Stage</th><th>Reason</th><th>Mandatory Comments</th><th>Status</th><th>Action</th></tr></thead><tbody>
+                  <tr><td>All Stages</td><td>Implementation Window Overlap</td><td><span className="bg bg-gr">Yes</span></td><td><span className="bg bg-gr">Active</span></td><td><button className="btn btn-s">Edit</button></td></tr>
+                  <tr><td>Authorization</td><td>Incorrect Approval Mapping</td><td><span className="bg bg-gr">Yes</span></td><td><span className="bg bg-gr">Active</span></td><td><button className="btn btn-s">Edit</button></td></tr>
+                  <tr><td>CAB Approval</td><td>Conflicting Change</td><td><span className="bg bg-gr">Yes</span></td><td><span className="bg bg-gr">Active</span></td><td><button className="btn btn-s">Edit</button></td></tr>
+                </tbody></table></div></div>
+              </div>
+              {/* Escalation Matrix */}
+              <div style={{display: admTab === 'adm-escalation' ? '' : 'none'}}>
+                <div className="card"><div className="ch"><div className="ct">Escalation Matrix</div><button className="btn btn-p">+ Add Level</button></div>
+                <div className="tw"><table><thead><tr><th>Level</th><th>Trigger</th><th>Escalate To</th><th>Channel</th><th>Delay</th><th>Status</th></tr></thead><tbody>
+                  <tr><td><span className="bg bg-gy">L1</span></td><td>SLA Breach</td><td>Domain Manager</td><td>Email + Portal</td><td>Immediate</td><td><span className="bg bg-gr">Active</span></td></tr>
+                  <tr><td><span className="bg bg-bl">L2</span></td><td>L1 No Response</td><td>Circle Manager</td><td>Email + Portal</td><td>+2 hrs</td><td><span className="bg bg-gr">Active</span></td></tr>
+                  <tr><td><span className="bg bg-te">L3</span></td><td>L2 No Response</td><td>NOC Head</td><td>Email + SMS</td><td>+4 hrs</td><td><span className="bg bg-gr">Active</span></td></tr>
+                </tbody></table></div></div>
+              </div>
+              {/* Users & Roles */}
+              <div style={{display: admTab === 'adm-users' ? '' : 'none'}}>
+                <div className="card"><div className="ch"><div className="ct">Users & Role Management</div><div style={{display:'flex',gap:'8px'}}><input placeholder="Search users..." style={{fontSize:'12px',padding:'5px 10px',border:'1px solid var(--bd)',borderRadius:'7px',fontFamily:'inherit',width:'180px'}} /><button className="btn btn-p">+ Add User</button></div></div>
+                <div className="tw"><table><thead><tr><th>Name</th><th>OLM ID</th><th>Role</th><th>Domain</th><th>Last Active</th><th>Status</th><th>Action</th></tr></thead><tbody>
+                  <tr><td><div style={{display:'flex',alignItems:'center',gap:'8px'}}><div style={{width:'26px',height:'26px',borderRadius:'50%',background:'var(--pu-s)',color:'var(--pu)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:600}}>AV</div>Amit Verma</div></td><td style={{fontFamily:"'DM Mono'",fontSize:'11px'}}>amver01</td><td><span className="bg bg-pu">CTO</span></td><td>All</td><td>Today</td><td><span className="bg bg-gr">Active</span></td><td><button className="btn btn-s">Edit</button></td></tr>
+                  <tr><td><div style={{display:'flex',alignItems:'center',gap:'8px'}}><div style={{width:'26px',height:'26px',borderRadius:'50%',background:'var(--ac-s)',color:'var(--ac)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:600}}>PD</div>Priya Deshmukh</div></td><td style={{fontFamily:"'DM Mono'",fontSize:'11px'}}>prdesh02</td><td><span className="bg bg-bl">COH</span></td><td>Optics</td><td>Today</td><td><span className="bg bg-gr">Active</span></td><td><button className="btn btn-s">Edit</button></td></tr>
+                  <tr><td><div style={{display:'flex',alignItems:'center',gap:'8px'}}><div style={{width:'26px',height:'26px',borderRadius:'50%',background:'var(--bd2)',color:'var(--tx2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'10px',fontWeight:600}}>SN</div>Sheha Nair</div></td><td style={{fontFamily:"'DM Mono'",fontSize:'11px'}}>nairsh04</td><td><span className="bg bg-gy">Engineer</span></td><td>WB</td><td>5 days ago</td><td><span className="bg bg-re">Inactive</span></td><td><button className="btn btn-s">Activate</button></td></tr>
+                </tbody></table></div></div>
+              </div>
             </div>
           </div>
 
-          {/* Domain-wise CRQ Analytics */}
-          {mounted && (
-            <div style={glass({ padding: '14px', cursor: 'pointer' })} onClick={() => openModal('Domain-wise CRQ Analytics', filtered)}>
-              <SectionTitle color={C.purple}>🏢 DOMAIN-WISE CRQ ANALYTICS</SectionTitle>
-              <div style={{ height: '205px' }}>
-                <Bar data={domainCRQ} options={stackedXOpts} />
-              </div>
-            </div>
-          )}
-        </div>
+        </div>{/* end content */}
+      </main>
 
-        {/* Footer */}
-        <div style={{
-          marginTop: '14px', padding: '10px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          borderTop: '1px solid rgba(0,191,255,0.07)',
-        }}>
-          <span style={{ fontSize: '9px', color: 'rgba(90,130,185,0.38)', letterSpacing: '0.06em' }}>
-            NOC CRQ Analytics Platform v4.2.1 · Telecom Network Operations Center · All times UTC
-          </span>
-          <div style={{ display: 'flex', gap: '14px' }}>
-            {[
-              { label: 'System Status', val: 'OPERATIONAL', color: C.green },
-              { label: 'Data Latency', val: '< 2s', color: C.cyan },
-              { label: 'Active Users', val: '47', color: C.blue },
-            ].map((s, i) => (
-              <div key={i} style={{ fontSize: '9px', color: 'rgba(130,175,230,0.45)', display: 'flex', gap: '4px', alignItems: 'center' }}>
-                <span>{s.label}:</span>
-                <span style={{ fontWeight: '700', color: s.color }}>{s.val}</span>
-              </div>
-            ))}
+      {/* ═══ MODALS ═══ */}
+      {/* Approve Modal */}
+      <div className={`mbg${activeModal === 'm-approve' ? ' open' : ''}`} onClick={e => { if (e.target === e.currentTarget) closeModal() }}>
+        <div className="modal">
+          <div className="mh"><div className="mt">Approve CRQ</div><div className="mx-btn" onClick={closeModal}>×</div></div>
+          <div className="mb">
+            <div style={{background:'var(--bg)',borderRadius:'8px',padding:'12px',marginBottom:'14px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',fontSize:'12px'}}>
+              <div><div style={{color:'var(--tx3)',marginBottom:'2px'}}>CRQ ID</div><div style={{fontFamily:"'DM Mono'",fontWeight:500}}>{selectedCrq?.id || 'CRQ-001'}</div></div>
+              <div><div style={{color:'var(--tx3)',marginBottom:'2px'}}>Approver</div><div style={{fontWeight:500}}>Amit Verma</div></div>
+              <div><div style={{color:'var(--tx3)',marginBottom:'2px'}}>Domain</div><div><span className="bg bg-bl">IP Core</span></div></div>
+              <div><div style={{color:'var(--tx3)',marginBottom:'2px'}}>OLM ID</div><div style={{fontFamily:"'DM Mono'"}}>A1L575DH</div></div>
+            </div>
+            <div className="fr"><label className="fl">Comments (Optional)</label><textarea rows={3} placeholder="Add your comments..."></textarea></div>
+          </div>
+          <div className="mf">
+            <button className="btn btn-s" onClick={closeModal}>Cancel</button>
+            <button className="btn btn-ok" onClick={() => { closeModal(); showToast('CRQ approved successfully') }}>✓ Confirm Approval</button>
           </div>
         </div>
       </div>
-    </div>
+
+      {/* Reject Modal */}
+      <div className={`mbg${activeModal === 'm-reject' ? ' open' : ''}`} onClick={e => { if (e.target === e.currentTarget) closeModal() }}>
+        <div className="modal">
+          <div className="mh"><div className="mt">Reject CRQ</div><div className="mx-btn" onClick={closeModal}>×</div></div>
+          <div className="mb">
+            <div style={{background:'var(--bg)',borderRadius:'8px',padding:'12px',marginBottom:'14px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',fontSize:'12px'}}>
+              <div><div style={{color:'var(--tx3)',marginBottom:'2px'}}>CRQ ID</div><div style={{fontFamily:"'DM Mono'",fontWeight:500}}>CRQ-001</div></div>
+              <div><div style={{color:'var(--tx3)',marginBottom:'2px'}}>Approver</div><div style={{fontWeight:500}}>Amit Verma</div></div>
+            </div>
+            <div className="fr"><label className="fl">Reason for Rejection *</label><select><option>— Select reason —</option><option>Implementation Window Overlap</option><option>Incorrect Approval Mapping</option><option>Conflicting Change</option><option>Insufficient Impact Analysis</option></select></div>
+            <div className="fr"><label className="fl">Additional Comments * (Mandatory)</label><textarea rows={3} placeholder="Provide detailed rejection reason..."></textarea></div>
+          </div>
+          <div className="mf">
+            <button className="btn btn-s" onClick={closeModal}>Cancel</button>
+            <button className="btn btn-no" onClick={() => { closeModal(); showToast('CRQ rejected and status updated') }}>✗ Confirm Rejection</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Delegate Modal */}
+      <div className={`mbg${activeModal === 'm-delegate' ? ' open' : ''}`} onClick={e => { if (e.target === e.currentTarget) closeModal() }}>
+        <div className="modal">
+          <div className="mh"><div className="mt">Delegate Change</div><div className="mx-btn" onClick={closeModal}>×</div></div>
+          <div className="mb">
+            <div style={{background:'var(--bg)',borderRadius:'8px',padding:'12px',marginBottom:'14px',fontSize:'12px',display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px'}}>
+              <div><div style={{color:'var(--tx3)',marginBottom:'2px'}}>Delegator</div><div style={{fontWeight:500}}>Anil Kumar</div></div>
+              <div><div style={{color:'var(--tx3)',marginBottom:'2px'}}>OLM ID</div><div style={{fontFamily:"'DM Mono'"}}>A1D389FG</div></div>
+            </div>
+            <div className="fr"><label className="fl">Delegate To *</label><select><option>— Select approver —</option><option>Suresh Sharma</option><option>Priya Deshmukh</option><option>Rahul Sharma</option></select></div>
+            <div style={{display:'flex',gap:'16px',marginBottom:'12px'}}>
+              <label style={{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',cursor:'pointer'}}><input type="radio" name="dt" defaultChecked /> Permanent</label>
+              <label style={{display:'flex',alignItems:'center',gap:'6px',fontSize:'12px',cursor:'pointer'}}><input type="radio" name="dt" /> Time-Based</label>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}}>
+              <div className="fr" style={{margin:'0'}}><label className="fl">Start Date</label><input type="date" /></div>
+              <div className="fr" style={{margin:'0'}}><label className="fl">End Date</label><input type="date" /></div>
+            </div>
+          </div>
+          <div className="mf">
+            <button className="btn btn-s" onClick={closeModal}>Close</button>
+            <button className="btn btn-p" onClick={() => { closeModal(); showToast('Delegation sent for CTO/COH approval') }}>✓ Confirm</button>
+          </div>
+        </div>
+      </div>
+
+      {/* CAB Session Modal */}
+      <div className={`mbg${activeModal === 'm-cab-session' ? ' open' : ''}`} onClick={e => { if (e.target === e.currentTarget) closeModal() }}>
+        <div className="modal" style={{width:'500px'}}>
+          <div className="mh"><div className="mt">CAB Session — CAB-031</div><div className="mx-btn" onClick={closeModal}>×</div></div>
+          <div className="mb">
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'14px'}}>
+              <div style={{background:'var(--bg)',padding:'12px',borderRadius:'8px'}}>
+                <div style={{fontSize:'11px',color:'var(--tx3)',fontWeight:500,marginBottom:'8px'}}>CRQ Information</div>
+                <div style={{display:'flex',flexDirection:'column',gap:'5px',fontSize:'12px'}}>
+                  <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--tx2)'}}>CRQ ID</span><span style={{fontFamily:"'DM Mono'"}}>CRQ-001</span></div>
+                  <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--tx2)'}}>Domain</span><span className="bg bg-bl" style={{fontSize:'10px'}}>IP Core</span></div>
+                  <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--tx2)'}}>Circle</span><span>GJ</span></div>
+                  <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--tx2)'}}>SLA</span><span style={{color:'var(--re)',fontWeight:600}}>8%</span></div>
+                </div>
+              </div>
+              <div style={{background:'var(--bg)',padding:'12px',borderRadius:'8px'}}>
+                <div style={{fontSize:'11px',color:'var(--tx3)',fontWeight:500,marginBottom:'8px'}}>Quorum Status</div>
+                <div style={{display:'flex',flexDirection:'column',gap:'5px',fontSize:'12px'}}>
+                  <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--tx2)'}}>Required</span><span style={{fontWeight:600}}>5</span></div>
+                  <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--tx2)'}}>Received</span><span style={{fontWeight:600}}>2</span></div>
+                  <div style={{display:'flex',justifyContent:'space-between'}}><span style={{color:'var(--tx2)'}}>Mandatory</span><span style={{fontWeight:600}}>1/2</span></div>
+                </div>
+                <div className="qbar"><div className="qfill" style={{width:'40%'}}></div></div>
+                <span className="bg bg-am">Waiting for Quorum</span>
+              </div>
+            </div>
+            <div style={{display:'flex',gap:'8px'}}>
+              <button className="btn btn-ok" style={{flex:1}} onClick={() => { closeModal(); showToast('Vote recorded: Approved') }}>✓ Approve</button>
+              <button className="btn btn-no" style={{flex:1}} onClick={() => { closeModal(); openModal('m-reject') }}>— Reject</button>
+              <button className="btn btn-warn" style={{flex:1}} onClick={() => { closeModal(); showToast('Vote recorded: Deferred') }}>↻ Defer</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Plan Session Modal */}
+      <div className={`mbg${activeModal === 'm-plan-session' ? ' open' : ''}`} onClick={e => { if (e.target === e.currentTarget) closeModal() }}>
+        <div className="modal">
+          <div className="mh"><div className="mt">Plan CAB Session</div><div className="mx-btn" onClick={closeModal}>×</div></div>
+          <div className="mb">
+            <div className="fr"><label className="fl">Session Date & Time *</label><input type="datetime-local" /></div>
+            <div className="fr"><label className="fl">Session Type</label><select><option>CAB Approval</option><option>Emergency CAB</option></select></div>
+            <div className="fr"><label className="fl">Quorum Requirement</label><input type="number" defaultValue={5} min={1} /></div>
+            <div className="fr"><label className="fl">Notes / Agenda</label><textarea rows={2} placeholder="Add agenda..."></textarea></div>
+            <div className="alert a-info" style={{margin:'0',fontSize:'11px'}}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{flexShrink:0,marginTop:'1px'}}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+              MS Teams meeting will be auto-created and invites sent.
+            </div>
+          </div>
+          <div className="mf">
+            <button className="btn btn-s" onClick={closeModal}>Cancel</button>
+            <button className="btn btn-p" onClick={() => { closeModal(); showToast('CAB session planned · MS Teams invite sent') }}>Create Session</button>
+          </div>
+        </div>
+      </div>
+
+      {/* New CRQ Modal */}
+      <div className={`mbg${activeModal === 'm-new-crq' ? ' open' : ''}`} onClick={e => { if (e.target === e.currentTarget) closeModal() }}>
+        <div className="modal" style={{width:'500px'}}>
+          <div className="mh"><div className="mt">New Change Request</div><div className="mx-btn" onClick={closeModal}>×</div></div>
+          <div className="mb">
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}}>
+              <div className="fr" style={{margin:'0 0 10px'}}><label className="fl">Activity Title *</label><input placeholder="e.g. Link Upgrade" /></div>
+              <div className="fr" style={{margin:'0 0 10px'}}><label className="fl">Domain *</label><select><option>IP Core</option><option>Optics</option><option>Packet</option><option>Embedded</option></select></div>
+              <div className="fr" style={{margin:'0 0 10px'}}><label className="fl">Circle *</label><select><option>GJ</option><option>MH</option><option>KA</option><option>DL</option></select></div>
+              <div className="fr" style={{margin:'0 0 10px'}}><label className="fl">Technology *</label><select><option>MPLS</option><option>BGP</option><option>GPON</option><option>Router</option></select></div>
+              <div className="fr" style={{margin:'0 0 10px'}}><label className="fl">Impact</label><select><option>SA (Service Affecting)</option><option>NSA</option></select></div>
+              <div className="fr" style={{margin:'0 0 10px'}}><label className="fl">Scheduled Date *</label><input type="date" /></div>
+            </div>
+            <div className="fr"><label className="fl">Maintenance Window *</label><input placeholder="e.g. 03:00 – 05:00" /></div>
+            <div className="fr" style={{margin:'0'}}><label className="fl">Hostname / Node</label><input placeholder="e.g. RTR-BLR01" /></div>
+          </div>
+          <div className="mf">
+            <button className="btn btn-s" onClick={closeModal}>Cancel</button>
+            <button className="btn btn-p" onClick={() => { closeModal(); showToast('CRQ submitted · Routed for Authorization approval') }}>Submit CRQ</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Add Approver Modal */}
+      <div className={`mbg${activeModal === 'm-add-approver' ? ' open' : ''}`} onClick={e => { if (e.target === e.currentTarget) closeModal() }}>
+        <div className="modal">
+          <div className="mh"><div className="mt">Add Approver</div><div className="mx-btn" onClick={closeModal}>×</div></div>
+          <div className="mb">
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}}>
+              <div className="fr" style={{margin:'0 0 10px'}}><label className="fl">Full Name *</label><input placeholder="Full name" /></div>
+              <div className="fr" style={{margin:'0 0 10px'}}><label className="fl">OLM ID *</label><input placeholder="e.g. user01" /></div>
+              <div className="fr" style={{margin:'0 0 10px'}}><label className="fl">Role Type *</label><select><option>CTO</option><option>COH</option><option>Manager</option><option>Engineer</option><option>CAB Member</option></select></div>
+              <div className="fr" style={{margin:'0 0 10px'}}><label className="fl">Approval Levels *</label><select><option>L1</option><option>L2</option><option>L3</option><option>L4</option><option>L1, L2</option><option>L3, L4</option></select></div>
+              <div className="fr" style={{margin:'0 0 10px'}}><label className="fl">Domain *</label><select><option>All Domains</option><option>IP Core</option><option>Optics</option><option>Embedded</option></select></div>
+              <div className="fr" style={{margin:'0 0 10px'}}><label className="fl">Circle</label><select><option>All</option><option>GJ</option><option>MH</option><option>KA</option></select></div>
+              <div className="fr" style={{margin:'0'}}><label className="fl">Delegation Allowed</label><select><option>Yes</option><option>No</option></select></div>
+              <div className="fr" style={{margin:'0'}}><label className="fl">Status</label><select><option>Active</option><option>Inactive</option></select></div>
+            </div>
+          </div>
+          <div className="mf">
+            <button className="btn btn-s" onClick={closeModal}>Cancel</button>
+            <button className="btn btn-p" onClick={() => { closeModal(); showToast('Approver added successfully') }}>Save Approver</button>
+          </div>
+        </div>
+      </div>
+
+      {/* TOAST */}
+      <div id="chm-toast" style={{
+        transform: toast.visible ? 'translateY(0)' : 'translateY(70px)',
+        opacity: toast.visible ? 1 : 0,
+      }}>{toast.msg}</div>
+    </>
   )
 }
